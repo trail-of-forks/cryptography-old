@@ -202,24 +202,24 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
     fn permits_basic(&self, cert: &Certificate) -> Result<(), PolicyError> {
         let extensions = cert.extensions()?;
 
-        // 4.1.1.1: tbsCertificate
+        // 5280 4.1.1.1: tbsCertificate
         // No checks required.
 
-        // 4.1.1.2 / 4.1.2.3: signatureAlgorithm / TBS Certificate Signature
+        // 5280 4.1.1.2 / 4.1.2.3: signatureAlgorithm / TBS Certificate Signature
         // The top-level signatureAlgorithm and TBSCert signature algorithm
         // MUST match.
         if cert.signature_alg != cert.tbs_cert.signature_alg {
             return Err("mismatch between signatureAlgorithm and SPKI algorithm".into());
         }
 
-        // 4.1.1.3: signatureValue
+        // 5280 4.1.1.3: signatureValue
         // No checks required.
 
-        // 4.1.2.1: Version
+        // 5280 4.1.2.1: Version
         // No checks required; implementations SHOULD be prepared to accept
         // any version certificate.
 
-        // 4.1.2.2: Serial Number
+        // 5280 4.1.2.2: Serial Number
         // Conforming CAs MUST NOT use serial numbers longer than 20 octets.
         // NOTE: In practice, this requires us to check for an encoding of
         // 21 octets, since some CAs generate 20 bytes of randomness and
@@ -229,16 +229,16 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err("certificate must have a serial between 1 and 20 octets".into());
         }
 
-        // 4.1.2.3: Signature
+        // 5280 4.1.2.3: Signature
         // See check under 4.1.1.2.
 
-        // 4.1.2.4: Issuer
+        // 5280 4.1.2.4: Issuer
         // The issuer MUST be a non-empty distinguished name.
         if cert.issuer().is_empty() {
             return Err("certificate must have a non-empty Issuer".into());
         }
 
-        // 4.1.2.5: Validity
+        // 5280 4.1.2.5: Validity
         // Validity dates before 2050 MUST be encoded as UTCTime;
         // dates in or after 2050 MUST be encoded as GeneralizedTime.
         // TODO: The existing `tbs_cert.validity` types don't expose this
@@ -250,22 +250,22 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err(PolicyError::Other("cert is not valid at validation time"));
         }
 
-        // 4.1.2.6: Subject
+        // 5280 4.1.2.6: Subject
         // Devolved to `permits_ca` and `permits_ee`.
 
-        // 4.1.2.7: Subject Public Key Info
+        // 5280 4.1.2.7: Subject Public Key Info
         // No checks required.
 
-        // 4.1.2.8: Unique Identifiers
+        // 5280 4.1.2.8: Unique Identifiers
         // These fields MUST only appear if the certificate version is 2 or 3.
         // TODO: Check this.
 
-        // 4.1.2.9: Extensions
+        // 5280 4.1.2.9: Extensions
         // This field must MUST only appear if the certificate version is 3,
         // and it MUST be non-empty if present.
         // TODO: Check this.
 
-        // 4.2.1.1: Authority Key Identifier
+        // 5280 4.2.1.1: Authority Key Identifier
         // Certificates MUST have an AuthorityKeyIdentifier, it MUST contain
         // the keyIdentifier field, and it MUST NOT be critical.
         // The exception to this is self-signed certificates, which MAY
@@ -285,10 +285,10 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             );
         }
 
-        // 4.2.1.2: Subject Key Identifier
+        // 5280 4.2.1.2: Subject Key Identifier
         // Developed to `permits_ca`.
 
-        // 4.2.1.3: Key Usage
+        // 5280 4.2.1.3: Key Usage
         if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
             // KeyUsage must have at least one bit asserted, if present.
             let key_usage: KeyUsage = key_usage.value()?;
@@ -308,13 +308,13 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             }
         }
 
-        // 4.2.1.4: Certificate Policies
+        // 5280 4.2.1.4: Certificate Policies
         // No checks required.
 
-        // 4.2.1.5: Policy Mappings
+        // 5280 4.2.1.5: Policy Mappings
         // No checks required.
 
-        // 4.2.1.8: Subject Directory Attributes
+        // 5280 4.2.1.8: Subject Directory Attributes
         // Conforming CAs MUST mark this extension as non-critical.
         if extensions
             .get_extension(&SUBJECT_DIRECTORY_ATTRIBUTES_OID)
@@ -380,13 +380,13 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
 
         let extensions = cert.extensions()?;
 
-        // 4.1.2.6: Subject
+        // 5280 4.1.2.6: Subject
         // CA certificates MUST have a subject populated with a non-empty distinguished name.
         if cert.subject().is_empty() {
             return Err("CA certificate must have a non-empty Subject".into());
         }
 
-        // 4.2:
+        // 5280 4.2:
         // CA certificates must contain a few core extensions. This implies
         // that the CA certificate must be a v3 certificate, since earlier
         // versions lack extensions entirely.
@@ -394,7 +394,7 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err("CA certificate must be an X509v3 certificate".into());
         }
 
-        // 4.2.1.2:
+        // 5280 4.2.1.2:
         // CA certificates MUST have a SubjectKeyIdentifier and it MUST NOT be
         // critical.
         if let Some(ski) = extensions.get_extension(&SUBJECT_KEY_IDENTIFIER_OID) {
@@ -407,7 +407,7 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err("store certificates must have a SubjectKeyIdentifier extension".into());
         }
 
-        // 4.2.1.3:
+        // 5280 4.2.1.3:
         // CA certificates MUST have a KeyUsage, it SHOULD be critical,
         // and it MUST have `keyCertSign` asserted.
         if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
@@ -422,7 +422,7 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err("CA certificates must have a KeyUsage extension".into());
         }
 
-        // 4.2.1.9: Basic Constraints
+        // 5280 4.2.1.9: Basic Constraints
         // CA certificates MUST have a BasicConstraints, it MUST be critical,
         // and it MUST have `cA` asserted.
         if let Some(basic_constraints) = extensions.get_extension(&BASIC_CONSTRAINTS_OID) {
@@ -438,10 +438,10 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             return Err("CA certificates must have a BasicConstraints extension".into());
         }
 
-        // 4.2.1.10: Name Constraints
+        // 5280 4.2.1.10: Name Constraints
         // If present, NameConstraints MUST be critical.
 
-        // 4.2.1.11: Policy Constraints
+        // 5280 4.2.1.11: Policy Constraints
         // If present, PolicyConstraints MUST be critical.
 
         // CA certificates must also adhere to the expected EKU.
@@ -494,13 +494,13 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         // TODO: Pedantic: When the subject is non-empty, subjectAltName SHOULD
         // be marked as non-critical.
 
-        // 4.2.1.5: Policy Mappings
+        // 5280 4.2.1.5: Policy Mappings
         // The RFC is not clear on whether these may appear in EE certificates.
 
-        // 4.2.1.10: Name Constraints
+        // 5280 4.2.1.10: Name Constraints
         // NameConstraints MUST NOT appear in EE certificates.
 
-        // 4.2.1.11: Policy Constraints
+        // 5280 4.2.1.11: Policy Constraints
         // The RFC is not clear on whether these may appear in EE certificates.
 
         self.permits_san(extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID))?;
