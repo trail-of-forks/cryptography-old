@@ -5,7 +5,7 @@
 use cryptography_x509::certificate::Certificate;
 use cryptography_x509_validation::{
     ops::CryptoOps,
-    policy::{profile::webpki::WebPKI, Policy, Subject, RFC5280},
+    policy::{Policy, Subject},
     trust_store::Store,
     types::{DNSName, IPAddress},
 };
@@ -66,10 +66,7 @@ impl CryptoOps for PyCryptoOps {
 // Our workaround is to unfold each profile variant in this enum, which produces
 // a small amount of (internal) duplication in exchange for the monomorphism that
 // pyO3 needs.
-enum FixedPolicy<'a> {
-    RFC5280(Policy<'a, PyCryptoOps, RFC5280>),
-    WebPKI(Policy<'a, PyCryptoOps, WebPKI>),
-}
+struct FixedPolicy<'a>(Policy<'a, PyCryptoOps>);
 
 /// This enum exists solely to provide heterogeneously typed ownership for `OwnedPolicy`.
 enum SubjectOwner {
@@ -98,8 +95,8 @@ self_cell::self_cell!(
 struct PyPolicy(OwnedPolicy);
 
 impl PyPolicy {
-    fn as_policy(&self) -> &FixedPolicy<'_> {
-        self.0.borrow_dependent()
+    fn as_policy(&self) -> &Policy<'_, PyCryptoOps> {
+        &self.0.borrow_dependent().0
     }
 }
 
@@ -182,7 +179,7 @@ fn create_policy<'p>(
     let policy = if profile.eq(rfc5280)? {
         OwnedPolicy::try_new(subject_owner, |subject_owner| {
             let subject = build_subject(py, subject_owner)?;
-            Ok::<FixedPolicy<'_>, pyo3::PyErr>(FixedPolicy::RFC5280(Policy::new(
+            Ok::<FixedPolicy<'_>, pyo3::PyErr>(FixedPolicy(Policy::rfc5280(
                 PyCryptoOps {},
                 subject,
                 time,
@@ -191,7 +188,7 @@ fn create_policy<'p>(
     } else if profile.eq(webpki)? {
         OwnedPolicy::try_new(subject_owner, |subject_owner| {
             let subject = build_subject(py, subject_owner)?;
-            Ok::<FixedPolicy<'_>, pyo3::PyErr>(FixedPolicy::WebPKI(Policy::new(
+            Ok::<FixedPolicy<'_>, pyo3::PyErr>(FixedPolicy(Policy::webpki(
                 PyCryptoOps {},
                 subject,
                 time,
@@ -226,26 +223,15 @@ fn verify<'p>(
         .collect::<Result<Vec<_>, _>>()?;
     let store = Store::new(store_certs.iter().map(|t| t.raw.borrow_dependent().clone()));
 
-    // TODO: This manual monomorphization over each policy type is pretty ugly;
-    // maybe fix it.
-    let chain = match &policy.as_policy() {
-        FixedPolicy::RFC5280(policy) => cryptography_x509_validation::verify(
-            leaf.raw.borrow_dependent(),
-            intermediates
-                .iter()
-                .map(|i| i.raw.borrow_dependent().clone()),
-            policy,
-            &store,
-        ),
-        FixedPolicy::WebPKI(policy) => cryptography_x509_validation::verify(
-            leaf.raw.borrow_dependent(),
-            intermediates
-                .iter()
-                .map(|i| i.raw.borrow_dependent().clone()),
-            policy,
-            &store,
-        ),
-    }
+    let policy = policy.as_policy();
+    let chain = cryptography_x509_validation::verify(
+        leaf.raw.borrow_dependent(),
+        intermediates
+            .iter()
+            .map(|i| i.raw.borrow_dependent().clone()),
+        policy,
+        &store,
+    )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("validation failed: {e:?}")))?;
 
     // TODO: Optimize this? Turning a Certificate back into a PyCertificate
