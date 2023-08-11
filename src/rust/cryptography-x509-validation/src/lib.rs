@@ -30,17 +30,10 @@ impl From<PolicyError> for ValidationError {
 
 pub type Chain<'c> = Vec<Certificate<'c>>;
 
-pub fn verify<
-    'leaf: 'chain,
-    'inter: 'chain,
-    'store: 'chain,
-    'chain,
-    B: CryptoOps,
-    P: policy::Profile<B>,
->(
+pub fn verify<'leaf: 'chain, 'inter: 'chain, 'store: 'chain, 'chain, B: CryptoOps>(
     leaf: &'chain Certificate<'leaf>,
     intermediates: impl IntoIterator<Item = Certificate<'inter>>,
-    policy: &Policy<B, P>,
+    policy: &Policy<B>,
     store: &'chain Store<'store>,
 ) -> Result<Chain<'chain>, ValidationError> {
     let builder = ChainBuilder::new(HashSet::from_iter(intermediates), policy, store);
@@ -48,14 +41,13 @@ pub fn verify<
     builder.build_chain(leaf)
 }
 
-struct ChainBuilder<'a, 'inter, 'store, B: CryptoOps, P: policy::Profile<B>> {
+struct ChainBuilder<'a, 'inter, 'store, B: CryptoOps> {
     intermediates: HashSet<Certificate<'inter>>,
-    policy: &'a Policy<'a, B, P>,
+    policy: &'a Policy<'a, B>,
     store: &'a Store<'store>,
 }
 
-impl<'a, 'inter, 'store, 'leaf, 'chain, 'work, B: CryptoOps, P: policy::Profile<B>>
-    ChainBuilder<'a, 'inter, 'store, B, P>
+impl<'a, 'inter, 'store, 'leaf, 'chain, 'work, B: CryptoOps> ChainBuilder<'a, 'inter, 'store, B>
 where
     'leaf: 'chain,
     'inter: 'chain,
@@ -65,7 +57,7 @@ where
 {
     fn new(
         intermediates: HashSet<Certificate<'inter>>,
-        policy: &'a Policy<B, P>,
+        policy: &'a Policy<B>,
         store: &'a Store<'store>,
     ) -> Self {
         Self {
@@ -154,8 +146,6 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::policy::RFC5280;
-
     use super::*;
 
     #[macro_export]
@@ -273,7 +263,7 @@ NlIpBxyLOUUx0e7+ooHYTUm9rNHmAYadjwNk3phoRzSQHhAQFjVQ
         let store = Store::new([root.clone()]);
         let ops = NullBackend {};
         let time = asn1::DateTime::new(2023, 1, 1, 0, 0, 0).unwrap();
-        let policy: Policy<_, RFC5280> = Policy::new(ops, None, time);
+        let policy: Policy<_> = Policy::rfc5280(ops, None, time);
 
         let chain = verify(&ee, [intermediate.clone()], &policy, &store).unwrap();
         assert_eq!(chain.len(), 3);
@@ -342,7 +332,7 @@ iVjMQ19R8XwBE6n9t+BePjjvfF5ws+ahgpjx1AM=
         let store = Store::new([]);
         let ops = NullBackend {};
         let time = asn1::DateTime::new(2023, 1, 1, 0, 0, 0).unwrap();
-        let policy: Policy<_, RFC5280> = Policy::new(ops, None, time);
+        let policy: Policy<_> = Policy::rfc5280(ops, None, time);
         assert!(
             verify(&ee, [intermediate.clone()], &policy, &store)
                 == Err(PolicyError::Other("chain construction exhausted all candidates").into())
@@ -494,7 +484,7 @@ CPz+qQOJcoMt8w6dIMgADFNgoigKtKM1rX7D0UuuOUVYNfq9ERVf
         let store = Store::new([root]);
         let ops = NullBackend {};
         let time = asn1::DateTime::new(2023, 1, 1, 0, 0, 0).unwrap();
-        let policy: Policy<_, RFC5280> = Policy::new(ops, None, time);
+        let policy: Policy<_> = Policy::rfc5280(ops, None, time);
         assert!(
             verify(&ee, [ica1.clone(), ica2.clone()], &policy, &store)
                 == Err(PolicyError::Other("chain construction exhausted all candidates").into())

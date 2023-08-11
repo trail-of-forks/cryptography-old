@@ -68,13 +68,6 @@ impl<B: CryptoOps> Profile<B> for RFC5280 {
             return Err("certificate must have a non-empty Issuer".into());
         }
 
-        // 4.1.2.5: Validity
-        // Validity dates before 2050 MUST be encoded as UTCTime;
-        // dates in or after 2050 MUST be encoded as GeneralizedTime.
-        // TODO: The existing `tbs_cert.validity` types don't expose this
-        // underlying detail. This check has no practical effect on the
-        // correctness of the certificate, so it's pretty low priority.
-
         // 4.1.2.6: Subject
         // Devolved to `permits_ca` and `permits_ee`.
 

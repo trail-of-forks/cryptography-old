@@ -20,12 +20,9 @@ use cryptography_x509::{
     },
 };
 
-use crate::{
-    ops::CryptoOps,
-    policy::{PolicyError, RFC5280},
-};
+use crate::{ops::CryptoOps, policy::PolicyError};
 
-use super::Profile;
+use super::{rfc5280::RFC5280, Profile};
 
 /// The Web PKI certificate profile.
 #[derive(Default)]
