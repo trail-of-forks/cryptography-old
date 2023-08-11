@@ -22,40 +22,30 @@ use cryptography_x509::{
 
 use crate::{ops::CryptoOps, policy::PolicyError};
 
-use super::{rfc5280::RFC5280, Profile};
+use super::Profile;
 
 /// The Web PKI certificate profile.
 #[derive(Default)]
-pub struct WebPKI {
-    pub(crate) subprofile: RFC5280,
-}
+pub struct WebPKI {}
 
 impl<B: CryptoOps> Profile<B> for WebPKI {
-    const CRITICAL_CA_EXTENSIONS: &'static [asn1::ObjectIdentifier] =
-        <RFC5280 as Profile<B>>::CRITICAL_CA_EXTENSIONS;
+    const CRITICAL_CA_EXTENSIONS: &'static [asn1::ObjectIdentifier] = &[];
 
-    const CRITICAL_EE_EXTENSIONS: &'static [asn1::ObjectIdentifier] =
-        <RFC5280 as Profile<B>>::CRITICAL_EE_EXTENSIONS;
+    const CRITICAL_EE_EXTENSIONS: &'static [asn1::ObjectIdentifier] = &[];
 
-    fn permits_basic(&self, ops: &B, cert: &Certificate) -> Result<(), PolicyError> {
-        self.subprofile.permits_basic(ops, cert)?;
-
+    fn permits_basic(&self, _ops: &B, _cert: &Certificate) -> Result<(), PolicyError> {
         // TODO
 
         Ok(())
     }
 
-    fn permits_ca(&self, ops: &B, cert: &Certificate) -> Result<(), PolicyError> {
-        self.subprofile.permits_ca(ops, cert)?;
-
+    fn permits_ca(&self, _ops: &B, _cert: &Certificate) -> Result<(), PolicyError> {
         // TODO
 
         Ok(())
     }
 
-    fn permits_ee(&self, ops: &B, cert: &Certificate) -> Result<(), PolicyError> {
-        self.subprofile.permits_ee(ops, cert)?;
-
+    fn permits_ee(&self, _ops: &B, cert: &Certificate) -> Result<(), PolicyError> {
         let extensions = cert.extensions()?;
 
         // The CA/B Forum BRs call EE certificates "subscriber" (or "server")
