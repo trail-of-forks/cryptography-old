@@ -6,6 +6,11 @@ use std::collections::HashSet;
 
 use asn1::ObjectIdentifier;
 use cryptography_x509::certificate::Certificate;
+use cryptography_x509::common::{
+    AlgorithmIdentifier, AlgorithmParameters, RsaPssParameters, PSS_SHA256_HASH_ALG,
+    PSS_SHA256_MASK_GEN_ALG, PSS_SHA384_HASH_ALG, PSS_SHA384_MASK_GEN_ALG, PSS_SHA512_HASH_ALG,
+    PSS_SHA512_MASK_GEN_ALG,
+};
 use cryptography_x509::extensions::{
     AuthorityKeyIdentifier, BasicConstraints, DuplicateExtensionsError, ExtendedKeyUsage,
     Extension, KeyUsage, SubjectAlternativeName,
@@ -16,6 +21,7 @@ use cryptography_x509::oid::{
     EXTENDED_KEY_USAGE_OID, KEY_USAGE_OID, SUBJECT_ALTERNATIVE_NAME_OID,
     SUBJECT_DIRECTORY_ATTRIBUTES_OID, SUBJECT_KEY_IDENTIFIER_OID,
 };
+use once_cell::sync::Lazy;
 
 use crate::certificate::{cert_is_self_issued, cert_is_self_signed};
 use crate::ops::CryptoOps;
@@ -25,6 +31,71 @@ const RFC5280_CRITICAL_CA_EXTENSIONS: &'static [asn1::ObjectIdentifier] =
     &[BASIC_CONSTRAINTS_OID, KEY_USAGE_OID];
 const RFC5280_CRITICAL_EE_EXTENSIONS: &'static [asn1::ObjectIdentifier] =
     &[BASIC_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID];
+
+static WEBPKI_PERMITTED_ALGORITHMS: Lazy<HashSet<AlgorithmIdentifier<'_>>> = Lazy::new(|| {
+    HashSet::from([
+        // RSASSA‐PKCS1‐v1_5 with SHA‐256
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaWithSha256(Some(())),
+        },
+        // RSASSA‐PKCS1‐v1_5 with SHA‐384
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaWithSha384(Some(())),
+        },
+        // RSASSA‐PKCS1‐v1_5 with SHA‐512
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaWithSha512(Some(())),
+        },
+        // RSASSA‐PSS with SHA‐256, MGF‐1 with SHA‐256, and a salt length of 32 bytes
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
+                hash_algorithm: PSS_SHA256_HASH_ALG,
+                mask_gen_algorithm: PSS_SHA256_MASK_GEN_ALG,
+                salt_length: 32,
+                _trailer_field: Default::default(),
+            }))),
+        },
+        // RSASSA‐PSS with SHA‐384, MGF‐1 with SHA‐384, and a salt length of 48 bytes
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
+                hash_algorithm: PSS_SHA384_HASH_ALG,
+                mask_gen_algorithm: PSS_SHA384_MASK_GEN_ALG,
+                salt_length: 48,
+                _trailer_field: Default::default(),
+            }))),
+        },
+        // RSASSA‐PSS with SHA‐512, MGF‐1 with SHA‐512, and a salt length of 64 bytes
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::RsaPss(Some(Box::new(RsaPssParameters {
+                hash_algorithm: PSS_SHA512_HASH_ALG,
+                mask_gen_algorithm: PSS_SHA512_MASK_GEN_ALG,
+                salt_length: 64,
+                _trailer_field: Default::default(),
+            }))),
+        },
+        // For P-256: the signature MUST use ECDSA with SHA‐256
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::EcDsaWithSha256(Some(())),
+        },
+        // For P-384: the signature MUST use ECDSA with SHA‐384
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::EcDsaWithSha384(Some(())),
+        },
+        // For P-521: the signature MUST use ECDSA with SHA‐512
+        AlgorithmIdentifier {
+            oid: asn1::DefinedByMarker::marker(),
+            params: AlgorithmParameters::EcDsaWithSha512(Some(())),
+        },
+    ])
+});
 
 #[derive(Debug, PartialEq)]
 pub enum PolicyError {
@@ -127,10 +198,8 @@ pub struct Policy<'a, B: CryptoOps> {
     // TODO: Make this an enum with supported SAN variants.
     pub subject: Option<Subject<'a>>,
 
-    // NOTE: Conceptually this belongs in the underlying profile instead,
-    // but doing so introduces another configuration point when virtually
-    // every profile should have the same validation time semantics.
-    // So we raise it to the profile instead.
+    /// The validation time. All certificates validated by this policy must
+    /// be valid at this time.
     pub validation_time: asn1::DateTime,
 
     // NOTE: Like the validation time, this conceptually belongs
@@ -138,8 +207,14 @@ pub struct Policy<'a, B: CryptoOps> {
     /// An extended key usage that must appear in EEs validated by this policy.
     pub extended_key_usage: ObjectIdentifier,
 
-    // TODO: Real types here, as these get filled in.
-    pub algorithms: (),
+    /// The set of permitted signature algorithms, identified by their
+    /// algorithm identifiers.
+    ///
+    /// If not `None`, all certificates validated by this policy MUST
+    /// have a signature algorithm in this set.
+    ///
+    /// If `None`, all signature algorithms are permitted.
+    pub permitted_algorithms: Option<HashSet<AlgorithmIdentifier<'a>>>,
 
     critical_ca_extensions: HashSet<ObjectIdentifier>,
     critical_ee_extensions: HashSet<ObjectIdentifier>,
@@ -155,7 +230,23 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             subject,
             validation_time: time,
             extended_key_usage: EKU_SERVER_AUTH_OID.clone(),
-            algorithms: (),
+            // NOTE: RFC 5280 imposes no signature algorithm restrictions.
+            permitted_algorithms: None,
+            critical_ca_extensions: RFC5280_CRITICAL_CA_EXTENSIONS.iter().cloned().collect(),
+            critical_ee_extensions: RFC5280_CRITICAL_EE_EXTENSIONS.iter().cloned().collect(),
+        }
+    }
+
+    /// Create a new policy with defaults for the certificate profile defined in
+    /// the CA/B Forum's Basic Requirements.
+    pub fn webpki(ops: B, subject: Option<Subject<'a>>, time: asn1::DateTime) -> Self {
+        Self {
+            ops,
+            max_chain_depth: 8,
+            subject,
+            validation_time: time,
+            extended_key_usage: EKU_SERVER_AUTH_OID.clone(),
+            permitted_algorithms: Some(WEBPKI_PERMITTED_ALGORITHMS.clone()),
             critical_ca_extensions: RFC5280_CRITICAL_CA_EXTENSIONS.iter().cloned().collect(),
             critical_ee_extensions: RFC5280_CRITICAL_EE_EXTENSIONS.iter().cloned().collect(),
         }
@@ -319,6 +410,15 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             .map_or(false, |e| e.critical)
         {
             return Err("SubjectDirectoryAttributes must not be marked critical".into());
+        }
+
+        // Non-profile checks follow.
+
+        if let Some(permitted_algorithms) = &self.permitted_algorithms {
+            if !permitted_algorithms.contains(&cert.signature_alg) {
+                // TODO: Should probably include the OID here.
+                return Err("Forbidden signature algorithm".into());
+            }
         }
 
         Ok(())
