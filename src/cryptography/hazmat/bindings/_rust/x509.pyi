@@ -3,7 +3,6 @@
 # for complete details.
 
 import datetime
-import typing
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
@@ -13,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 def load_pem_x509_certificate(data: bytes) -> x509.Certificate: ...
 def load_pem_x509_certificates(
     data: bytes,
-) -> typing.List[x509.Certificate]: ...
+) -> list[x509.Certificate]: ...
 def load_der_x509_certificate(data: bytes) -> x509.Certificate: ...
 def load_pem_x509_crl(data: bytes) -> x509.CertificateRevocationList: ...
 def load_der_x509_crl(data: bytes) -> x509.CertificateRevocationList: ...
@@ -24,28 +23,28 @@ def encode_extension_value(extension: x509.ExtensionType) -> bytes: ...
 def create_x509_certificate(
     builder: x509.CertificateBuilder,
     private_key: PrivateKeyTypes,
-    hash_algorithm: typing.Optional[hashes.HashAlgorithm],
-    padding: typing.Optional[typing.Union[PKCS1v15, PSS]],
+    hash_algorithm: hashes.HashAlgorithm | None,
+    padding: PKCS1v15 | PSS | None,
 ) -> x509.Certificate: ...
 def create_x509_csr(
     builder: x509.CertificateSigningRequestBuilder,
     private_key: PrivateKeyTypes,
-    hash_algorithm: typing.Optional[hashes.HashAlgorithm],
+    hash_algorithm: hashes.HashAlgorithm | None,
 ) -> x509.CertificateSigningRequest: ...
 def create_x509_crl(
     builder: x509.CertificateRevocationListBuilder,
     private_key: PrivateKeyTypes,
-    hash_algorithm: typing.Optional[hashes.HashAlgorithm],
+    hash_algorithm: hashes.HashAlgorithm | None,
 ) -> x509.CertificateRevocationList: ...
 def create_policy(
     profile: x509.verification.Profile,
-    name: typing.Optional[x509.verification.Subject],
-    time: typing.Optional[datetime.datetime],
+    name: x509.verification.Subject | None,
+    time: datetime.datetime | None,
 ) -> x509.verification.Policy: ...
 def verify(
     leaf: x509.Certificate,
     policy: Policy,
-    intermediates: typing.List[x509.Certificate],
+    intermediates: list[x509.Certificate],
     store: x509.verification.Store,
 ) -> list[x509.Certificate]: ...
 
@@ -55,3 +54,6 @@ class RevokedCertificate: ...
 class CertificateRevocationList: ...
 class CertificateSigningRequest: ...
 class Policy: ...
+
+class Store:
+    def __init__(self, certs: list[x509.Certificate]) -> None: ...

@@ -18,6 +18,26 @@ use super::{
     py_to_datetime, sign,
 };
 
+#[pyo3::pyclass(
+    frozen,
+    name = "Store",
+    module = "cryptography.hazmat.bindings._rust.x509"
+)]
+struct PyStore(Vec<pyo3::Py<PyCertificate>>);
+
+#[pyo3::pymethods]
+impl PyStore {
+    #[new]
+    fn new(certs: Vec<pyo3::Py<PyCertificate>>) -> pyo3::PyResult<Self> {
+        if certs.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "can't create an empty store",
+            ));
+        }
+        Ok(Self(certs))
+    }
+}
+
 pub(crate) struct PyCryptoOps {}
 
 impl CryptoOps for PyCryptoOps {
@@ -100,8 +120,8 @@ impl PyPolicy {
     }
 }
 
-fn build_subject_owner<'p>(
-    py: pyo3::Python<'p>,
+fn build_subject_owner(
+    py: pyo3::Python<'_>,
     subject: pyo3::Py<pyo3::PyAny>,
 ) -> pyo3::PyResult<SubjectOwner> {
     let subject = subject.as_ref(py);
@@ -134,8 +154,8 @@ fn build_subject_owner<'p>(
     }
 }
 
-fn build_subject<'a, 'p>(
-    py: pyo3::Python<'p>,
+fn build_subject<'a>(
+    py: pyo3::Python<'_>,
     subject: &'a SubjectOwner,
 ) -> pyo3::PyResult<Option<Subject<'a>>> {
     match subject {
@@ -156,8 +176,8 @@ fn build_subject<'a, 'p>(
 }
 
 #[pyo3::prelude::pyfunction]
-fn create_policy<'p>(
-    py: pyo3::Python<'p>,
+fn create_policy(
+    py: pyo3::Python<'_>,
     profile: &pyo3::PyAny,
     subject: pyo3::Py<pyo3::PyAny>,
     time: Option<&pyo3::PyAny>,
@@ -209,19 +229,18 @@ fn verify<'p>(
     leaf: &PyCertificate,
     policy: &PyPolicy,
     intermediates: &'p pyo3::types::PyList,
-    store: &'p pyo3::PyAny,
+    store: &'p PyStore,
 ) -> CryptographyResult<Vec<PyCertificate>> {
     let intermediates = intermediates
         .iter()
         .map(|o| o.extract::<pyo3::PyRef<'p, PyCertificate>>())
         .collect::<Result<Vec<_>, _>>()?;
-    let store_certs = store
-        .getattr(pyo3::intern!(py, "_certs"))?
-        .downcast::<pyo3::types::PyList>()?
-        .iter()
-        .map(|o| o.extract::<pyo3::PyRef<'p, PyCertificate>>())
-        .collect::<Result<Vec<_>, _>>()?;
-    let store = Store::new(store_certs.iter().map(|t| t.raw.borrow_dependent().clone()));
+    let store = Store::new(
+        store
+            .0
+            .iter()
+            .map(|t| t.get().raw.borrow_dependent().clone()),
+    );
 
     let policy = policy.as_policy();
     let chain = cryptography_x509_validation::verify(
@@ -251,6 +270,7 @@ fn verify<'p>(
 }
 
 pub(crate) fn add_to_module(module: &pyo3::prelude::PyModule) -> pyo3::PyResult<()> {
+    module.add_class::<PyStore>()?;
     module.add_class::<PyPolicy>()?;
     module.add_function(pyo3::wrap_pyfunction!(verify, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(create_policy, module)?)?;
