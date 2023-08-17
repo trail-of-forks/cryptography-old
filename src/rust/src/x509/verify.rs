@@ -111,7 +111,11 @@ self_cell::self_cell!(
     }
 );
 
-#[pyo3::pyclass(name = "Policy", module = "cryptography.hazmat.bindings._rust.x509")]
+#[pyo3::pyclass(
+    frozen,
+    name = "Policy",
+    module = "cryptography.hazmat.bindings._rust.x509"
+)]
 struct PyPolicy(OwnedPolicy);
 
 impl PyPolicy {
