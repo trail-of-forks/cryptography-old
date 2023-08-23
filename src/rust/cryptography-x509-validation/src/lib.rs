@@ -77,13 +77,12 @@ where
         // * Search by AKI and other identifiers?
         self.intermediates
             .iter()
-            .filter(move |candidate| candidate != &cert)
-            .filter(|candidate| candidate.subject() == cert.issuer())
-            .chain(
-                self.store
-                    .iter()
-                    .filter(|candidate| candidate.subject() == cert.issuer()),
-            )
+            // NOTE: The intermediate set isn't allowed to offer a self-signed
+            // certificate as a candidate, since self-signed certs can only
+            // be roots.
+            .filter(|&candidate| *candidate != *cert)
+            .chain(self.store.iter())
+            .filter(|&candidate| candidate.subject() == cert.issuer())
     }
 
     fn build_chain_inner(
