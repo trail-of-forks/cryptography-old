@@ -77,6 +77,7 @@ where
         // * Search by AKI and other identifiers?
         self.intermediates
             .iter()
+            .filter(move |candidate| candidate != &cert)
             .filter(|candidate| candidate.subject() == cert.issuer())
             .chain(
                 self.store
@@ -115,10 +116,7 @@ where
                     .valid_issuer(issuing_cert_candidate, working_cert, current_depth)
             {
                 let mut chain = vec![working_cert.clone()];
-                // Don't continue recursing in the case of a self-issued certificate.
-                if working_cert != issuing_cert_candidate || current_depth != next_depth {
-                    chain.extend(self.build_chain_inner(issuing_cert_candidate, next_depth)?);
-                }
+                chain.extend(self.build_chain_inner(issuing_cert_candidate, next_depth)?);
                 return Ok(chain);
             }
         }
