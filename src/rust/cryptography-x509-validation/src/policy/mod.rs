@@ -395,6 +395,18 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
                         .into(),
                 );
             }
+
+            // If keyCertSign is true, the BasicConstraints extension must be present with cA set to true.
+            if key_usage.key_cert_sign() {
+                if let Some(basic_constraints) = extensions.get_extension(&BASIC_CONSTRAINTS_OID) {
+                    let basic_constraints: BasicConstraints = basic_constraints.value()?;
+                    if !basic_constraints.ca {
+                        return Err("KeyUsage.keyCertSign can only be true when BasicConstraints.cA is true".into());
+                    }
+                } else {
+                    return Err("KeyUsage.keyCertSign can only be true when a BasicConstraints extension is present".into());
+                }
+            }
         }
 
         // 5280 4.2.1.4: Certificate Policies
