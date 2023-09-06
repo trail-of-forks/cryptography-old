@@ -126,18 +126,13 @@ where
     }
 
     fn build_chain(&self, leaf: &Certificate<'leaf>) -> Result<Chain<'chain>, ValidationError> {
-        // Before anything else, check whether the given EE cert
+        // Before anything else, check whether the given leaf cert
         // is well-formed according to our policy (and its underlying
         // certificate profile).
         //
-        // This includes a check against the EE cert's SANs.
-        //
-        // NOTE: This is correct when the certificate passed in is an EE,
-        // but there's no reason why a user shouldn't be able to pass in an
-        // intermediate instead and construct a chain from there. Maybe
-        // check whether `leaf` is actually an EE and, if not, validate
-        // it against the policy's CA checks instead?
-        self.policy.permits_ee(leaf)?;
+        // In the case that the leaf is an EE, this includes a check
+        // against the EE cert's SANs.
+        self.policy.permits_leaf(leaf)?;
 
         // NOTE: We start the chain depth at 1, indicating the EE.
         self.build_chain_inner(leaf, 1)

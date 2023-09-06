@@ -395,18 +395,6 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
                         .into(),
                 );
             }
-
-            // If keyCertSign is true, the BasicConstraints extension must be present with cA set to true.
-            if key_usage.key_cert_sign() {
-                if let Some(basic_constraints) = extensions.get_extension(&BASIC_CONSTRAINTS_OID) {
-                    let basic_constraints: BasicConstraints = basic_constraints.value()?;
-                    if !basic_constraints.ca {
-                        return Err("KeyUsage.keyCertSign can only be true when BasicConstraints.cA is true".into());
-                    }
-                } else {
-                    return Err("KeyUsage.keyCertSign can only be true when a BasicConstraints extension is present".into());
-                }
-            }
         }
 
         // 5280 4.2.1.4: Certificate Policies
@@ -482,6 +470,17 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             // See: CA/B Baseline Requirements v2.0.0: 7.1.2.1.2
             Ok(())
         }
+    }
+
+    pub(crate) fn permits_leaf(&self, leaf: &Certificate) -> Result<(), PolicyError> {
+        let extensions = leaf.extensions()?;
+        if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
+            let key_usage: KeyUsage = key_usage.value()?;
+            if key_usage.key_cert_sign() {
+                return self.permits_ca(leaf);
+            }
+        }
+        return self.permits_ee(leaf);
     }
 
     /// Checks whether the given CA certificate is compatible with this policy.
