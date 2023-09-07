@@ -15,8 +15,7 @@ use std::collections::HashSet;
 use cryptography_x509::{
     certificate::Certificate,
     extensions::{
-        DuplicateExtensionsError, NameConstraints, SequenceOfSubtrees,
-        SubjectAlternativeName,
+        DuplicateExtensionsError, NameConstraints, SequenceOfSubtrees, SubjectAlternativeName,
     },
     name::GeneralName,
     oid::{NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID},
