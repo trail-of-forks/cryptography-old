@@ -12,10 +12,19 @@ pub mod types;
 
 use std::collections::HashSet;
 
-use cryptography_x509::certificate::Certificate;
+use cryptography_x509::{
+    certificate::Certificate,
+    extensions::{
+        DuplicateExtensionsError, Extensions, GeneralSubtree, NameConstraints,
+        SubjectAlternativeName,
+    },
+    name::GeneralName,
+    oid::{NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID},
+};
 use ops::CryptoOps;
-use policy::{Policy, PolicyError};
+use policy::{Policy, PolicyError, Subject};
 use trust_store::Store;
+use types::{DNSName, DNSPattern, IPRange};
 
 #[derive(Debug, PartialEq)]
 pub enum ValidationError {
@@ -28,7 +37,31 @@ impl From<PolicyError> for ValidationError {
     }
 }
 
+// TODO(alex): Can we avoid this?
+impl From<asn1::ParseError> for ValidationError {
+    fn from(value: asn1::ParseError) -> Self {
+        ValidationError::Policy(PolicyError::Malformed(value))
+    }
+}
+
+impl From<DuplicateExtensionsError> for ValidationError {
+    fn from(value: DuplicateExtensionsError) -> Self {
+        ValidationError::Policy(PolicyError::DuplicateExtension(value))
+    }
+}
+
+pub enum NameConstraint {
+    DNSConstraint(String),
+    IPConstraint(Vec<u8>),
+}
+
+pub struct AccumulatedNameConstraints {
+    pub permitted: Vec<NameConstraint>,
+    pub excluded: Vec<NameConstraint>,
+}
+
 pub type Chain<'c> = Vec<Certificate<'c>>;
+pub type ChainBuilderResult<'c> = (Vec<Certificate<'c>>, AccumulatedNameConstraints);
 
 pub fn verify<'leaf: 'chain, 'inter: 'chain, 'store: 'chain, 'chain, B: CryptoOps>(
     leaf: &'chain Certificate<'leaf>,
@@ -89,7 +122,7 @@ where
         &self,
         working_cert: &Certificate<'work>,
         current_depth: u8,
-    ) -> Result<Chain<'work>, ValidationError> {
+    ) -> Result<ChainBuilderResult<'work>, ValidationError> {
         if current_depth > self.policy.max_chain_depth {
             return Err(PolicyError::Other("chain construction exceeds max depth").into());
         }
@@ -101,7 +134,35 @@ where
         // here: inclusion in the root set implies a trust relationship,
         // even if the working certificate is an EE or intermediate CA.
         if self.store.contains(working_cert) {
-            return Ok(vec![working_cert.clone()]);
+            let extensions = working_cert.extensions()?;
+            let mut constraints = AccumulatedNameConstraints {
+                permitted: vec![],
+                excluded: vec![],
+            };
+            if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
+                let nc: NameConstraints = nc.value()?;
+                if let Some(permitted_subtrees) = nc.permitted_subtrees {
+                    for ps in permitted_subtrees.unwrap_read().clone() {
+                        match ps.base {
+                            GeneralName::DNSName(dns_name) => {
+                                let dns_name = dns_name.0.to_string();
+                                constraints
+                                    .permitted
+                                    .push(NameConstraint::DNSConstraint(dns_name));
+                            }
+                            GeneralName::IPAddress(ip_addr) => {
+                                let ip_addr = ip_addr.to_vec();
+                                constraints
+                                    .permitted
+                                    .push(NameConstraint::IPConstraint(ip_addr));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if let Some(excluded_subtrees) = nc.excluded_subtrees {}
+            };
+            return Ok((vec![working_cert.clone()], constraints));
         }
 
         // Otherwise, we collect a list of potential issuers for this cert,
@@ -114,9 +175,38 @@ where
                 self.policy
                     .valid_issuer(issuing_cert_candidate, working_cert, current_depth)
             {
+                let extensions = working_cert.extensions()?;
                 let mut chain = vec![working_cert.clone()];
-                chain.extend(self.build_chain_inner(issuing_cert_candidate, next_depth)?);
-                return Ok(chain);
+                let result = self.build_chain_inner(issuing_cert_candidate, next_depth);
+                if let Ok(result) = result {
+                    let (remaining, constraints) = result;
+                    if let Some(san) = extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
+                        for constraint in constraints.permitted.iter() {
+                            let sans: SubjectAlternativeName = san.value()?;
+                            match constraint {
+                                NameConstraint::DNSConstraint(dns_pattern) => {
+                                    for san in sans {
+                                        if let Some(dns_pattern) =
+                                            DNSPattern::new(dns_pattern.as_str())
+                                        {
+                                            if let GeneralName::DNSName(san) = san {
+                                                if let Some(san) = DNSName::new(san.0) {
+                                                    dns_pattern.matches(&san);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                NameConstraint::IPConstraint(ip_pattern) => {
+                                    let ip_pattern = IPRange::from_bytes(ip_pattern.as_slice());
+                                }
+                            }
+                        }
+                        chain.extend(remaining);
+                        // TODO(alex): Add new constraints here.
+                        return Ok((chain, constraints));
+                    }
+                }
             }
         }
 
@@ -135,7 +225,14 @@ where
         self.policy.permits_leaf(leaf)?;
 
         // NOTE: We start the chain depth at 1, indicating the EE.
-        self.build_chain_inner(leaf, 1)
+        let result = self.build_chain_inner(leaf, 1);
+        match result {
+            Ok(result) => {
+                let (chain, _) = result;
+                Ok(chain)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
