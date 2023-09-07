@@ -172,7 +172,11 @@ where
                     if let Some(dns_pattern) = DNSPattern::new(constraint.as_str()) {
                         if let GeneralName::DNSName(san) = san {
                             if let Some(san) = DNSName::new(san.0) {
-                                dns_pattern.matches(&san);
+                                if (!dns_pattern.matches(&san)) {
+                                    return Err(
+                                        PolicyError::Other("mismatching name constraint").into()
+                                    );
+                                }
                             }
                         }
                     }
