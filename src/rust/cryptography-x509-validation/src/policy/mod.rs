@@ -472,15 +472,15 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         }
     }
 
+    /// Checks whether the given "leaf" certificate is compatible with this policy.
+    ///
+    /// A "leaf" certificate is just the certificate in the leaf position during
+    /// path validation, whether it be a CA or EE. As such, `permits_leaf`
+    /// is logically equivalent to `permits_ee(leaf) || permits_ca(leaf)`.
     pub(crate) fn permits_leaf(&self, leaf: &Certificate) -> Result<(), PolicyError> {
-        let extensions = leaf.extensions()?;
-        if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
-            let key_usage: KeyUsage = key_usage.value()?;
-            if key_usage.key_cert_sign() {
-                return self.permits_ca(leaf);
-            }
-        }
-        return self.permits_ee(leaf);
+        // NOTE: Perform `permits_ee` first, since 99% of path validations should have
+        // an EE certificate in the leaf position.
+        self.permits_ee(leaf).or_else(|_| self.permits_ca(leaf))
     }
 
     /// Checks whether the given CA certificate is compatible with this policy.
