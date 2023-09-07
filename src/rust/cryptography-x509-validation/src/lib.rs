@@ -15,16 +15,16 @@ use std::collections::HashSet;
 use cryptography_x509::{
     certificate::Certificate,
     extensions::{
-        DuplicateExtensionsError, Extensions, GeneralSubtree, NameConstraints, SequenceOfSubtrees,
+        DuplicateExtensionsError, NameConstraints, SequenceOfSubtrees,
         SubjectAlternativeName,
     },
     name::GeneralName,
     oid::{NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID},
 };
 use ops::CryptoOps;
-use policy::{Policy, PolicyError, Subject};
+use policy::{Policy, PolicyError};
 use trust_store::Store;
-use types::{DNSName, DNSPattern, IPRange};
+use types::{DNSName, DNSPattern};
 
 #[derive(Debug, PartialEq)]
 pub enum ValidationError {
@@ -172,7 +172,7 @@ where
                     if let Some(dns_pattern) = DNSPattern::new(constraint.as_str()) {
                         if let GeneralName::DNSName(san) = san {
                             if let Some(san) = DNSName::new(san.0) {
-                                if (!dns_pattern.matches(&san)) {
+                                if !dns_pattern.matches(&san) {
                                     return Err(
                                         PolicyError::Other("mismatching name constraint").into()
                                     );
@@ -181,7 +181,7 @@ where
                         }
                     }
                 }
-                NameConstraint::IPConstraint(constraint) => {}
+                NameConstraint::IPConstraint(_constraint) => {}
             }
         }
         Ok(())
