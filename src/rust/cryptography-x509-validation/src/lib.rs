@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use cryptography_x509::{
     certificate::Certificate,
     extensions::{
-        DuplicateExtensionsError, Extensions, GeneralSubtree, NameConstraints,
+        DuplicateExtensionsError, Extensions, GeneralSubtree, NameConstraints, SequenceOfSubtrees,
         SubjectAlternativeName,
     },
     name::GeneralName,
@@ -118,6 +118,109 @@ where
             .filter(|&candidate| candidate.subject() == cert.issuer())
     }
 
+    fn build_name_constraints_subtrees(
+        &self,
+        subtrees: SequenceOfSubtrees,
+    ) -> Result<Vec<NameConstraint>, ValidationError> {
+        let mut constraints: Vec<NameConstraint> = vec![];
+        for subtree in subtrees.unwrap_read().clone() {
+            match subtree.base {
+                GeneralName::DNSName(dns_name) => {
+                    let dns_name = dns_name.0.to_string();
+                    constraints.push(NameConstraint::DNSConstraint(dns_name));
+                }
+                GeneralName::IPAddress(ip_addr) => {
+                    let ip_addr = ip_addr.to_vec();
+                    constraints.push(NameConstraint::IPConstraint(ip_addr));
+                }
+                _ => {}
+            }
+        }
+        Ok(constraints)
+    }
+
+    fn build_name_constraints(
+        &self,
+        constraints: &mut AccumulatedNameConstraints,
+        working_cert: &Certificate<'work>,
+    ) -> Result<(), ValidationError> {
+        let extensions = working_cert.extensions()?;
+        if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
+            let nc: NameConstraints = nc.value()?;
+            if let Some(permitted_subtrees) = nc.permitted_subtrees {
+                constraints
+                    .permitted
+                    .extend(self.build_name_constraints_subtrees(permitted_subtrees)?);
+            }
+            if let Some(excluded_subtrees) = nc.excluded_subtrees {
+                constraints
+                    .excluded
+                    .extend(self.build_name_constraints_subtrees(excluded_subtrees)?);
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_name_constraint(
+        &self,
+        constraint: &NameConstraint,
+        sans: &SubjectAlternativeName,
+    ) -> Result<(), ValidationError> {
+        for san in sans.clone() {
+            match constraint {
+                NameConstraint::DNSConstraint(constraint) => {
+                    if let Some(dns_pattern) = DNSPattern::new(constraint.as_str()) {
+                        if let GeneralName::DNSName(san) = san {
+                            if let Some(san) = DNSName::new(san.0) {
+                                dns_pattern.matches(&san);
+                            }
+                        }
+                    }
+                }
+                NameConstraint::IPConstraint(constraint) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_name_constraints(
+        &self,
+        constraints: &AccumulatedNameConstraints,
+        working_cert: &Certificate<'work>,
+    ) -> Result<(), ValidationError> {
+        // TODO(alex): Don't we need to apply this to the subject too?
+        // Unfortunately `Certificate.subject` doesn't give a string so there'll be more type wrangling involved.
+        if constraints.permitted.is_empty() && constraints.excluded.is_empty() {
+            return Ok(());
+        }
+        let extensions = working_cert.extensions()?;
+        match extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
+            Some(sans) => {
+                let sans: SubjectAlternativeName = sans.value()?;
+                if !constraints.permitted.is_empty()
+                    && !constraints
+                        .permitted
+                        .iter()
+                        .any(|c| self.apply_name_constraint(c, &sans).is_ok())
+                {
+                    Err(PolicyError::Other("no permitted name constraints matched SAN").into())
+                } else if constraints
+                    .excluded
+                    .iter()
+                    .any(|c| self.apply_name_constraint(c, &sans).is_ok())
+                {
+                    Err(PolicyError::Other("excluded name constraint matched SAN").into())
+                } else {
+                    Ok(())
+                }
+            }
+            None => Err(PolicyError::Other(
+                "certificate has no SAN and therefore can't pass name constraints",
+            )
+            .into()),
+        }
+    }
+
     fn build_chain_inner(
         &self,
         working_cert: &Certificate<'work>,
@@ -134,34 +237,11 @@ where
         // here: inclusion in the root set implies a trust relationship,
         // even if the working certificate is an EE or intermediate CA.
         if self.store.contains(working_cert) {
-            let extensions = working_cert.extensions()?;
             let mut constraints = AccumulatedNameConstraints {
                 permitted: vec![],
                 excluded: vec![],
             };
-            if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
-                let nc: NameConstraints = nc.value()?;
-                if let Some(permitted_subtrees) = nc.permitted_subtrees {
-                    for ps in permitted_subtrees.unwrap_read().clone() {
-                        match ps.base {
-                            GeneralName::DNSName(dns_name) => {
-                                let dns_name = dns_name.0.to_string();
-                                constraints
-                                    .permitted
-                                    .push(NameConstraint::DNSConstraint(dns_name));
-                            }
-                            GeneralName::IPAddress(ip_addr) => {
-                                let ip_addr = ip_addr.to_vec();
-                                constraints
-                                    .permitted
-                                    .push(NameConstraint::IPConstraint(ip_addr));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                if let Some(excluded_subtrees) = nc.excluded_subtrees {}
-            };
+            self.build_name_constraints(&mut constraints, working_cert)?;
             return Ok((vec![working_cert.clone()], constraints));
         }
 
@@ -175,35 +255,16 @@ where
                 self.policy
                     .valid_issuer(issuing_cert_candidate, working_cert, current_depth)
             {
-                let extensions = working_cert.extensions()?;
-                let mut chain = vec![working_cert.clone()];
                 let result = self.build_chain_inner(issuing_cert_candidate, next_depth);
                 if let Ok(result) = result {
-                    let (remaining, constraints) = result;
-                    if let Some(san) = extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
-                        for constraint in constraints.permitted.iter() {
-                            let sans: SubjectAlternativeName = san.value()?;
-                            match constraint {
-                                NameConstraint::DNSConstraint(dns_pattern) => {
-                                    for san in sans {
-                                        if let Some(dns_pattern) =
-                                            DNSPattern::new(dns_pattern.as_str())
-                                        {
-                                            if let GeneralName::DNSName(san) = san {
-                                                if let Some(san) = DNSName::new(san.0) {
-                                                    dns_pattern.matches(&san);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                NameConstraint::IPConstraint(ip_pattern) => {
-                                    let ip_pattern = IPRange::from_bytes(ip_pattern.as_slice());
-                                }
-                            }
-                        }
+                    let (remaining, mut constraints) = result;
+                    if self
+                        .apply_name_constraints(&constraints, working_cert)
+                        .is_ok()
+                    {
+                        let mut chain = vec![working_cert.clone()];
                         chain.extend(remaining);
-                        // TODO(alex): Add new constraints here.
+                        self.build_name_constraints(&mut constraints, working_cert)?;
                         return Ok((chain, constraints));
                     }
                 }
