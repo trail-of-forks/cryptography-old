@@ -582,7 +582,20 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
 
         let extensions = cert.extensions()?;
 
-        // 4.1.2.6 / 4.2.1.6: Subject / Subject Alternative Name
+        // 5280 4.2.1.3: Key Usage
+        // It isn't stated explicitly, but an EE is defined to be not a CA,
+        // so it MUST NOT assert keyCertSign.
+        if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
+            let key_usage: KeyUsage = key_usage.value()?;
+
+            if key_usage.key_cert_sign() {
+                return Err(PolicyError::Other(
+                    "EE is marked as a CA certificate (keyUsage.keyCertSign)",
+                ));
+            }
+        }
+
+        // 5280 4.1.2.6 / 4.2.1.6: Subject / Subject Alternative Name
         // EE certificates MAY have their subject in either the subject or subjectAltName.
         // If the subject is empty, then the subjectAltName MUST be marked critical.
         if cert.subject().is_empty() {
@@ -605,6 +618,19 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
 
         // 5280 4.2.1.5: Policy Mappings
         // The RFC is not clear on whether these may appear in EE certificates.
+
+        // 5280 4.2.1.9: Basic Constraints
+        // We refute `KeyUsage.keyCertSign` above, so `BasicConstraints.cA` MUST NOT
+        // be asserted.
+        if let Some(basic_constraints) = extensions.get_extension(&BASIC_CONSTRAINTS_OID) {
+            let basic_constraints: BasicConstraints = basic_constraints.value()?;
+
+            if basic_constraints.ca {
+                return Err(PolicyError::Other(
+                    "EE is marked as a CA certificate (basicConstraints.cA)",
+                ));
+            }
+        }
 
         // 5280 4.2.1.10: Name Constraints
         // NameConstraints MUST NOT appear in EE certificates.
