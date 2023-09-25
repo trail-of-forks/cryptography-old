@@ -12,6 +12,8 @@ pub mod types;
 
 use std::collections::HashSet;
 
+use crate::types::{IPAddress, IPRange};
+use cryptography_x509::extensions::Extensions;
 use cryptography_x509::{
     certificate::Certificate,
     extensions::{
@@ -20,12 +22,10 @@ use cryptography_x509::{
     name::GeneralName,
     oid::{NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID},
 };
-use cryptography_x509::extensions::Extensions;
 use ops::CryptoOps;
 use policy::{Policy, PolicyError};
 use trust_store::Store;
 use types::{DNSName, DNSPattern};
-use crate::types::{IPAddress, IPRange};
 
 #[derive(Debug, PartialEq)]
 pub enum ValidationError {
@@ -130,7 +130,7 @@ where
         constraints: &mut AccumulatedNameConstraints<'work>,
         working_cert: &'work Certificate<'work>,
     ) -> Result<(), ValidationError> {
-        let extensions:Extensions<'work> = working_cert.extensions()?;
+        let extensions: Extensions<'work> = working_cert.extensions()?;
         if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
             let nc: NameConstraints = nc.value()?;
             if let Some(permitted_subtrees) = nc.permitted_subtrees {
@@ -159,14 +159,14 @@ where
                         let name = DNSName::new(name.0).unwrap();
                         pattern.matches(&name);
                     }
-                },
+                }
                 (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
                     if let Some(pattern) = IPRange::from_bytes(pattern) {
                         let name = IPAddress::from_bytes(name).unwrap();
                         pattern.matches(&name);
                     }
-                },
-                _ => return Err(PolicyError::Other("mismatching name constraint").into())
+                }
+                _ => return Err(PolicyError::Other("mismatching name constraint").into()),
             }
         }
         Ok(())
@@ -265,7 +265,10 @@ where
         Err(PolicyError::Other("chain construction exhausted all candidates").into())
     }
 
-    fn build_chain(&self, leaf: &'chain Certificate<'leaf>) -> Result<Chain<'chain>, ValidationError> {
+    fn build_chain(
+        &self,
+        leaf: &'chain Certificate<'leaf>,
+    ) -> Result<Chain<'chain>, ValidationError> {
         // Before anything else, check whether the given leaf cert
         // is well-formed according to our policy (and its underlying
         // certificate profile).
