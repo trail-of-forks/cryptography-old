@@ -128,11 +128,11 @@ where
     fn build_name_constraints(
         &self,
         constraints: &mut AccumulatedNameConstraints<'work>,
-        working_cert: &'work Certificate<'work>,
+        working_cert: &'a Certificate<'work>,
     ) -> Result<(), ValidationError> {
         let extensions: Extensions<'work> = working_cert.extensions()?;
         if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
-            let nc: NameConstraints = nc.value()?;
+            let nc: NameConstraints<'work> = nc.value()?;
             if let Some(permitted_subtrees) = nc.permitted_subtrees {
                 constraints
                     .permitted
@@ -212,7 +212,7 @@ where
 
     fn build_chain_inner(
         &self,
-        working_cert: &'work Certificate<'work>,
+        working_cert: &'a Certificate<'work>,
         current_depth: u8,
     ) -> Result<ChainBuilderResult<'work>, ValidationError> {
         if current_depth > self.policy.max_chain_depth {
