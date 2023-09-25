@@ -57,7 +57,7 @@ pub struct AccumulatedNameConstraints<'a> {
 }
 
 pub type Chain<'c> = Vec<Certificate<'c>>;
-pub type ChainBuilderResult<'c> = (Vec<Certificate<'c>>, AccumulatedNameConstraints<'c>);
+pub type ChainBuilderResult<'c> = (Chain<'c>, AccumulatedNameConstraints<'c>);
 
 pub fn verify<'leaf: 'chain, 'inter: 'chain, 'store: 'chain, 'chain, B: CryptoOps>(
     leaf: &'chain Certificate<'leaf>,
