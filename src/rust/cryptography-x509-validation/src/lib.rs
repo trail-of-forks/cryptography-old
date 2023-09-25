@@ -20,10 +20,12 @@ use cryptography_x509::{
     name::GeneralName,
     oid::{NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID},
 };
+use cryptography_x509::extensions::Extensions;
 use ops::CryptoOps;
 use policy::{Policy, PolicyError};
 use trust_store::Store;
 use types::{DNSName, DNSPattern};
+use crate::types::{IPAddress, IPRange};
 
 #[derive(Debug, PartialEq)]
 pub enum ValidationError {
@@ -49,18 +51,13 @@ impl From<DuplicateExtensionsError> for ValidationError {
     }
 }
 
-pub enum NameConstraint {
-    DNSConstraint(String),
-    IPConstraint(Vec<u8>),
-}
-
-pub struct AccumulatedNameConstraints {
-    pub permitted: Vec<NameConstraint>,
-    pub excluded: Vec<NameConstraint>,
+pub struct AccumulatedNameConstraints<'a> {
+    pub permitted: Vec<GeneralName<'a>>,
+    pub excluded: Vec<GeneralName<'a>>,
 }
 
 pub type Chain<'c> = Vec<Certificate<'c>>;
-pub type ChainBuilderResult<'c> = (Vec<Certificate<'c>>, AccumulatedNameConstraints);
+pub type ChainBuilderResult<'c> = (Vec<Certificate<'c>>, AccumulatedNameConstraints<'c>);
 
 pub fn verify<'leaf: 'chain, 'inter: 'chain, 'store: 'chain, 'chain, B: CryptoOps>(
     leaf: &'chain Certificate<'leaf>,
@@ -119,31 +116,21 @@ where
 
     fn build_name_constraints_subtrees(
         &self,
-        subtrees: SequenceOfSubtrees,
-    ) -> Result<Vec<NameConstraint>, ValidationError> {
-        let mut constraints: Vec<NameConstraint> = vec![];
+        subtrees: SequenceOfSubtrees<'work>,
+    ) -> Result<Vec<GeneralName<'work>>, ValidationError> {
+        let mut constraints: Vec<GeneralName<'work>> = vec![];
         for subtree in subtrees.unwrap_read().clone() {
-            match subtree.base {
-                GeneralName::DNSName(dns_name) => {
-                    let dns_name = dns_name.0.to_string();
-                    constraints.push(NameConstraint::DNSConstraint(dns_name));
-                }
-                GeneralName::IPAddress(ip_addr) => {
-                    let ip_addr = ip_addr.to_vec();
-                    constraints.push(NameConstraint::IPConstraint(ip_addr));
-                }
-                _ => {}
-            }
+            constraints.push(subtree.base);
         }
         Ok(constraints)
     }
 
     fn build_name_constraints(
         &self,
-        constraints: &mut AccumulatedNameConstraints,
-        working_cert: &Certificate<'work>,
+        constraints: &mut AccumulatedNameConstraints<'work>,
+        working_cert: &'work Certificate<'work>,
     ) -> Result<(), ValidationError> {
-        let extensions = working_cert.extensions()?;
+        let extensions:Extensions<'work> = working_cert.extensions()?;
         if let Some(nc) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
             let nc: NameConstraints = nc.value()?;
             if let Some(permitted_subtrees) = nc.permitted_subtrees {
@@ -162,25 +149,24 @@ where
 
     fn apply_name_constraint(
         &self,
-        constraint: &NameConstraint,
+        constraint: &GeneralName<'work>,
         sans: &SubjectAlternativeName,
     ) -> Result<(), ValidationError> {
         for san in sans.clone() {
-            match constraint {
-                NameConstraint::DNSConstraint(constraint) => {
-                    if let Some(dns_pattern) = DNSPattern::new(constraint.as_str()) {
-                        if let GeneralName::DNSName(san) = san {
-                            if let Some(san) = DNSName::new(san.0) {
-                                if !dns_pattern.matches(&san) {
-                                    return Err(
-                                        PolicyError::Other("mismatching name constraint").into()
-                                    );
-                                }
-                            }
-                        }
+            match (constraint, san) {
+                (GeneralName::DNSName(pattern), GeneralName::DNSName(name)) => {
+                    if let Some(pattern) = DNSPattern::new(pattern.0) {
+                        let name = DNSName::new(name.0).unwrap();
+                        pattern.matches(&name);
                     }
-                }
-                NameConstraint::IPConstraint(_constraint) => {}
+                },
+                (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
+                    if let Some(pattern) = IPRange::from_bytes(pattern) {
+                        let name = IPAddress::from_bytes(name).unwrap();
+                        pattern.matches(&name);
+                    }
+                },
+                _ => return Err(PolicyError::Other("mismatching name constraint").into())
             }
         }
         Ok(())
@@ -188,7 +174,7 @@ where
 
     fn apply_name_constraints(
         &self,
-        constraints: &AccumulatedNameConstraints,
+        constraints: &AccumulatedNameConstraints<'work>,
         working_cert: &Certificate<'work>,
     ) -> Result<(), ValidationError> {
         // TODO(alex): Don't we need to apply this to the subject too?
@@ -226,7 +212,7 @@ where
 
     fn build_chain_inner(
         &self,
-        working_cert: &Certificate<'work>,
+        working_cert: &'work Certificate<'work>,
         current_depth: u8,
     ) -> Result<ChainBuilderResult<'work>, ValidationError> {
         if current_depth > self.policy.max_chain_depth {
@@ -265,7 +251,7 @@ where
                         .apply_name_constraints(&constraints, working_cert)
                         .is_ok()
                     {
-                        let mut chain = vec![working_cert.clone()];
+                        let mut chain: Vec<Certificate<'work>> = vec![working_cert.clone()];
                         chain.extend(remaining);
                         self.build_name_constraints(&mut constraints, working_cert)?;
                         return Ok((chain, constraints));
@@ -279,7 +265,7 @@ where
         Err(PolicyError::Other("chain construction exhausted all candidates").into())
     }
 
-    fn build_chain(&self, leaf: &Certificate<'leaf>) -> Result<Chain<'chain>, ValidationError> {
+    fn build_chain(&self, leaf: &'chain Certificate<'leaf>) -> Result<Chain<'chain>, ValidationError> {
         // Before anything else, check whether the given leaf cert
         // is well-formed according to our policy (and its underlying
         // certificate profile).
