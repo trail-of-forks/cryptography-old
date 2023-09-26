@@ -57,7 +57,7 @@ pub struct AccumulatedNameConstraints<'a> {
 }
 
 pub type Chain<'c> = Vec<Certificate<'c>>;
-pub type ChainBuilderResult<'c> = (Chain<'c>, AccumulatedNameConstraints<'c>);
+type IntermediateChain<'c> = (Chain<'c>, AccumulatedNameConstraints<'c>);
 
 pub fn verify<'leaf: 'chain, 'inter: 'chain, 'store: 'chain, 'chain, B: CryptoOps>(
     leaf: &'chain Certificate<'leaf>,
@@ -214,7 +214,7 @@ where
         &self,
         working_cert: &'a Certificate<'work>,
         current_depth: u8,
-    ) -> Result<ChainBuilderResult<'work>, ValidationError> {
+    ) -> Result<IntermediateChain<'work>, ValidationError> {
         if current_depth > self.policy.max_chain_depth {
             return Err(PolicyError::Other("chain construction exceeds max depth").into());
         }
