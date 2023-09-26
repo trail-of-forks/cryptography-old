@@ -12,7 +12,7 @@ pub mod types;
 
 use std::collections::HashSet;
 
-use crate::types::{IPAddress, IPRange};
+use crate::types::{DNSConstraint, IPAddress, IPRange};
 use cryptography_x509::extensions::Extensions;
 use cryptography_x509::{
     certificate::Certificate,
@@ -25,7 +25,7 @@ use cryptography_x509::{
 use ops::CryptoOps;
 use policy::{Policy, PolicyError};
 use trust_store::Store;
-use types::{DNSName, DNSPattern};
+use types::DNSName;
 
 #[derive(Debug, PartialEq)]
 pub enum ValidationError {
@@ -152,15 +152,25 @@ where
         for san in sans.clone() {
             match (constraint, san) {
                 (GeneralName::DNSName(pattern), GeneralName::DNSName(name)) => {
-                    if let Some(pattern) = DNSPattern::new(pattern.0) {
+                    if let Some(pattern) = DNSConstraint::new(pattern.0) {
                         let name = DNSName::new(name.0).unwrap();
-                        pattern.matches(&name);
+                        if !pattern.matches(&name) {
+                            return Err(
+                                PolicyError::Other("mismatching DNS name constraint").into()
+                            );
+                        }
+                    } else {
+                        return Err(PolicyError::Other("malformed DNS name constraint").into());
                     }
                 }
                 (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
                     if let Some(pattern) = IPRange::from_bytes(pattern) {
                         let name = IPAddress::from_bytes(name).unwrap();
-                        pattern.matches(&name);
+                        if !pattern.matches(&name) {
+                            return Err(PolicyError::Other("mismatching IP name constraint").into());
+                        }
+                    } else {
+                        return Err(PolicyError::Other("malformed IP name constraint").into());
                     }
                 }
                 _ => return Err(PolicyError::Other("mismatching name constraint").into()),
