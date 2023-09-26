@@ -118,12 +118,8 @@ where
     fn build_name_constraints_subtrees(
         &self,
         subtrees: SequenceOfSubtrees<'work>,
-    ) -> Result<Vec<GeneralName<'work>>, ValidationError> {
-        let mut constraints: Vec<GeneralName<'work>> = vec![];
-        for subtree in subtrees.unwrap_read().clone() {
-            constraints.push(subtree.base);
-        }
-        Ok(constraints)
+    ) -> Vec<GeneralName<'work>> {
+        subtrees.unwrap_read().clone().map(|x| x.base).collect()
     }
 
     fn build_name_constraints(
@@ -137,12 +133,12 @@ where
             if let Some(permitted_subtrees) = nc.permitted_subtrees {
                 constraints
                     .permitted
-                    .extend(self.build_name_constraints_subtrees(permitted_subtrees)?);
+                    .extend(self.build_name_constraints_subtrees(permitted_subtrees));
             }
             if let Some(excluded_subtrees) = nc.excluded_subtrees {
                 constraints
                     .excluded
-                    .extend(self.build_name_constraints_subtrees(excluded_subtrees)?);
+                    .extend(self.build_name_constraints_subtrees(excluded_subtrees));
             }
         }
         Ok(())
