@@ -51,6 +51,7 @@ impl From<DuplicateExtensionsError> for ValidationError {
     }
 }
 
+#[derive(Default)]
 pub struct AccumulatedNameConstraints<'a> {
     pub permitted: Vec<GeneralName<'a>>,
     pub excluded: Vec<GeneralName<'a>>,
@@ -226,10 +227,7 @@ where
         // here: inclusion in the root set implies a trust relationship,
         // even if the working certificate is an EE or intermediate CA.
         if self.store.contains(working_cert) {
-            let mut constraints = AccumulatedNameConstraints {
-                permitted: vec![],
-                excluded: vec![],
-            };
+            let mut constraints = AccumulatedNameConstraints::default();
             self.build_name_constraints(&mut constraints, working_cert)?;
             return Ok((vec![working_cert.clone()], constraints));
         }
