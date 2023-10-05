@@ -18,7 +18,7 @@ use cryptography_x509::extensions::{
 use cryptography_x509::name::GeneralName;
 use cryptography_x509::oid::{
     AUTHORITY_KEY_IDENTIFIER_OID, BASIC_CONSTRAINTS_OID, EKU_SERVER_AUTH_OID,
-    EXTENDED_KEY_USAGE_OID, KEY_USAGE_OID, SUBJECT_ALTERNATIVE_NAME_OID,
+    EXTENDED_KEY_USAGE_OID, KEY_USAGE_OID, NAME_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID,
     SUBJECT_DIRECTORY_ATTRIBUTES_OID, SUBJECT_KEY_IDENTIFIER_OID,
 };
 use once_cell::sync::Lazy;
@@ -28,7 +28,7 @@ use crate::ops::CryptoOps;
 use crate::types::{DNSName, DNSPattern, IPAddress, IPRange};
 
 const RFC5280_CRITICAL_CA_EXTENSIONS: &[asn1::ObjectIdentifier] =
-    &[BASIC_CONSTRAINTS_OID, KEY_USAGE_OID];
+    &[BASIC_CONSTRAINTS_OID, KEY_USAGE_OID, NAME_CONSTRAINTS_OID];
 const RFC5280_CRITICAL_EE_EXTENSIONS: &[asn1::ObjectIdentifier] =
     &[BASIC_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID];
 
@@ -549,6 +549,11 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
 
         // 5280 4.2.1.10: Name Constraints
         // If present, NameConstraints MUST be critical.
+        if let Some(name_constraints) = extensions.get_extension(&NAME_CONSTRAINTS_OID) {
+            if !name_constraints.critical {
+                return Err("NameConstraints must be marked critical in a CA certificate".into());
+            }
+        }
 
         // 5280 4.2.1.11: Policy Constraints
         // If present, PolicyConstraints MUST be critical.
@@ -634,6 +639,9 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
 
         // 5280 4.2.1.10: Name Constraints
         // NameConstraints MUST NOT appear in EE certificates.
+        if extensions.get_extension(&NAME_CONSTRAINTS_OID).is_some() {
+            return Err(PolicyError::Other("EE has nameConstraints extension"));
+        }
 
         // 5280 4.2.1.11: Policy Constraints
         // The RFC is not clear on whether these may appear in EE certificates.
