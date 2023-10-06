@@ -142,6 +142,8 @@ impl Subject<'_> {
             (GeneralName::IPAddress(pattern), Self::IP(name)) => {
                 if let Some(pattern) = IPRange::from_bytes(pattern) {
                     pattern.matches(name)
+                } else if let Some(pattern) = IPAddress::from_bytes(pattern) {
+                    pattern == *name
                 } else {
                     false
                 }
