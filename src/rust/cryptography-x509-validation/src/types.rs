@@ -101,7 +101,7 @@ impl<'a> DNSPattern<'a> {
         }
     }
 
-    pub fn matches(&self, name: &DNSName) -> bool {
+    pub fn matches(&self, name: &DNSName<'_>) -> bool {
         match self {
             Self::Exact(pat) => pat == name,
             Self::Wildcard(pat) => match name.parent() {
@@ -130,7 +130,7 @@ impl<'a> DNSConstraint<'a> {
         }
     }
 
-    pub fn matches(&self, name: &DNSName) -> bool {
+    pub fn matches(&self, name: &DNSName<'_>) -> bool {
         // Zero or more labels can be added to the left of the name while matching the constraint.
         // This means that the end of the name should match the constraint pattern.
         name.as_str()

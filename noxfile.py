@@ -168,6 +168,7 @@ def flake(session: nox.Session) -> None:
 
 
 @nox.session
+@nox.session(name="rust-noclippy")
 def rust(session: nox.Session) -> None:
     prof_location = (
         pathlib.Path(".") / ".rust-cov" / str(uuid.uuid4())
@@ -183,13 +184,20 @@ def rust(session: nox.Session) -> None:
     # Just install the dependencies needed for the Rust build.rs
     # TODO: Ideally there'd be a pip flag to install just our dependencies,
     # but not install us.
-    install(session, "cffi")
+    install(session, "cffi", "setuptools")
 
     with session.chdir("src/rust/"):
         session.run("cargo", "fmt", "--all", "--", "--check", external=True)
-        session.run(
-            "cargo", "clippy", "--all", "--", "-D", "warnings", external=True
-        )
+        if session.name != "rust-noclippy":
+            session.run(
+                "cargo",
+                "clippy",
+                "--all",
+                "--",
+                "-D",
+                "warnings",
+                external=True,
+            )
 
         build_output = session.run(
             "cargo",
