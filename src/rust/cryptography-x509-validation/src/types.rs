@@ -128,7 +128,7 @@ impl<'a> DNSConstraint<'a> {
         // This means that the end of the name should match the constraint pattern.
         name.as_str()
             .to_ascii_lowercase()
-            .ends_with(self.pattern.as_str().to_ascii_lowercase().as_str())
+            .ends_with(self.0.as_str().to_ascii_lowercase().as_str())
     }
 }
 
