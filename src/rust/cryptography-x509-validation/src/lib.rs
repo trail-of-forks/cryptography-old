@@ -147,34 +147,30 @@ where
     fn apply_name_constraint(
         &self,
         constraint: &GeneralName<'work>,
-        sans: &SubjectAlternativeName,
+        san: &GeneralName,
     ) -> Result<(), ValidationError> {
-        for san in sans.clone() {
-            match (constraint, san) {
-                (GeneralName::DNSName(pattern), GeneralName::DNSName(name)) => {
-                    if let Some(pattern) = DNSConstraint::new(pattern.0) {
-                        let name = DNSName::new(name.0).unwrap();
-                        if !pattern.matches(&name) {
-                            return Err(
-                                PolicyError::Other("mismatching DNS name constraint").into()
-                            );
-                        }
-                    } else {
-                        return Err(PolicyError::Other("malformed DNS name constraint").into());
+        match (constraint, san) {
+            (GeneralName::DNSName(pattern), GeneralName::DNSName(name)) => {
+                if let Some(pattern) = DNSConstraint::new(pattern.0) {
+                    let name = DNSName::new(name.0).unwrap();
+                    if !pattern.matches(&name) {
+                        return Err(PolicyError::Other("mismatching DNS name constraint").into());
                     }
+                } else {
+                    return Err(PolicyError::Other("malformed DNS name constraint").into());
                 }
-                (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
-                    if let Some(pattern) = IPRange::from_bytes(pattern) {
-                        let name = IPAddress::from_bytes(name).unwrap();
-                        if !pattern.matches(&name) {
-                            return Err(PolicyError::Other("mismatching IP name constraint").into());
-                        }
-                    } else {
-                        return Err(PolicyError::Other("malformed IP name constraint").into());
-                    }
-                }
-                _ => return Err(PolicyError::Other("mismatching name constraint").into()),
             }
+            (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
+                if let Some(pattern) = IPRange::from_bytes(pattern) {
+                    let name = IPAddress::from_bytes(name).unwrap();
+                    if !pattern.matches(&name) {
+                        return Err(PolicyError::Other("mismatching IP name constraint").into());
+                    }
+                } else {
+                    return Err(PolicyError::Other("malformed IP name constraint").into());
+                }
+            }
+            _ => return Err(PolicyError::Other("mismatching name constraint").into()),
         }
         Ok(())
     }
@@ -190,31 +186,28 @@ where
             return Ok(());
         }
         let extensions = working_cert.extensions()?;
-        match extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
-            Some(sans) => {
-                let sans: SubjectAlternativeName = sans.value()?;
+        if let Some(sans) = extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
+            let sans: SubjectAlternativeName = sans.value()?;
+            for san in sans.clone() {
                 if !constraints.permitted.is_empty()
                     && !constraints
                         .permitted
                         .iter()
-                        .any(|c| self.apply_name_constraint(c, &sans).is_ok())
+                        .any(|c| self.apply_name_constraint(c, &san).is_ok())
                 {
-                    Err(PolicyError::Other("no permitted name constraints matched SAN").into())
+                    return Err(
+                        PolicyError::Other("no permitted name constraints matched SAN").into(),
+                    );
                 } else if constraints
                     .excluded
                     .iter()
-                    .any(|c| self.apply_name_constraint(c, &sans).is_ok())
+                    .any(|c| self.apply_name_constraint(c, &san).is_ok())
                 {
-                    Err(PolicyError::Other("excluded name constraint matched SAN").into())
-                } else {
-                    Ok(())
+                    return Err(PolicyError::Other("excluded name constraint matched SAN").into());
                 }
             }
-            None => Err(PolicyError::Other(
-                "certificate has no SAN and therefore can't pass name constraints",
-            )
-            .into()),
         }
+        Ok(())
     }
 
     fn build_chain_inner(
