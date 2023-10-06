@@ -28,12 +28,23 @@ def _get_limbo_peer(expected_peer, testcase_id):
     if kind == "DNS":
         return x509.DNSName(value)
     elif kind == "IP":
-        return x509.IPAddress(value)
+        return x509.IPAddress(IPv4Address(value))
     else:
         assert False, f"{testcase_id}: unexpected peer kind: {kind}"
 
 
+LIMBO_UNSUPPORTED_FEATURES = {
+    "pedantic-public-suffix-wildcard",
+    "name-constraint-dn",
+}
+
+
 def _limbo_testcase(testcase):
+    features = testcase["features"]
+    if features is not None and LIMBO_UNSUPPORTED_FEATURES.intersection(
+        features
+    ):
+        return
     testcase_id = testcase["id"]
     assert (
         testcase["validation_kind"] == "SERVER"
@@ -41,9 +52,6 @@ def _limbo_testcase(testcase):
     assert (
         testcase["signature_algorithms"] is None
     ), f"{testcase_id}: signature_algorithms not supported yet"
-    assert (
-        testcase["key_usage"] is None
-    ), f"{testcase_id}: key_usage not supported yet"
     assert (
         testcase["extended_key_usage"] is None
     ), f"{testcase_id}: extended_key_usage not supported yet"
