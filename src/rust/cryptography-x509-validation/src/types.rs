@@ -116,18 +116,11 @@ impl<'a> DNSPattern<'a> {
 /// A `DNSConstraint` represents a DNS name constraint as defined in [RFC 5280 4.2.1.10].
 ///
 /// [RFC 5280 4.2.1.10]: https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.10
-pub struct DNSConstraint<'a> {
-    pub pattern: DNSName<'a>,
-}
+pub struct DNSConstraint<'a>(DNSName<'a>);
 
 impl<'a> DNSConstraint<'a> {
     pub fn new(pattern: &'a str) -> Option<Self> {
-        // Wildcards are not allowed in DNS name constraints.
-        if pattern.contains('*') {
-            None
-        } else {
-            DNSName::new(pattern).map(|pattern| Self { pattern })
-        }
+        DNSName::new(pattern).map(Self)
     }
 
     pub fn matches(&self, name: &DNSName<'_>) -> bool {
