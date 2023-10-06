@@ -456,6 +456,7 @@ mod tests {
         assert_eq!(DNSConstraint::new(""), None);
         assert_eq!(DNSConstraint::new("."), None);
         assert_eq!(DNSConstraint::new("*."), None);
+        assert_eq!(DNSConstraint::new("*"), None);
         assert_eq!(DNSConstraint::new(".example"), None);
         assert_eq!(DNSConstraint::new("*.example"), None);
         assert_eq!(DNSConstraint::new("*.example.com"), None);
