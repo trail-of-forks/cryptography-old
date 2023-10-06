@@ -12,6 +12,7 @@ pub mod types;
 
 use std::collections::HashSet;
 
+use crate::certificate::cert_is_self_issued;
 use crate::types::{DNSConstraint, IPAddress, IPRange};
 use crate::ApplyNameConstraintStatus::{Applied, Skipped};
 use cryptography_x509::extensions::Extensions;
@@ -264,9 +265,13 @@ where
                 let result = self.build_chain_inner(issuing_cert_candidate, next_depth);
                 if let Ok(result) = result {
                     let (remaining, mut constraints) = result;
-                    if self
-                        .apply_name_constraints(&constraints, working_cert)
-                        .is_ok()
+                    // Name constraints are not applied to self-issued certificates unless they're the leaf certificate in the chain.
+                    let skip_name_constraints =
+                        cert_is_self_issued(working_cert) && current_depth != 1;
+                    if skip_name_constraints
+                        || self
+                            .apply_name_constraints(&constraints, working_cert)
+                            .is_ok()
                     {
                         let mut chain: Vec<Certificate<'work>> = vec![working_cert.clone()];
                         chain.extend(remaining);
