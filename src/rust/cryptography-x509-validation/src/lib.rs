@@ -88,10 +88,7 @@ enum ApplyNameConstraintStatus {
 
 impl ApplyNameConstraintStatus {
     fn is_applied(&self) -> bool {
-        match self {
-            Applied(_) => true,
-            _ => false,
-        }
+        matches!(self, Applied(_))
     }
 
     fn is_match(&self) -> bool {
