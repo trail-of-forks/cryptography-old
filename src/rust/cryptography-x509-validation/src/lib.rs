@@ -13,6 +13,7 @@ pub mod types;
 use std::collections::HashSet;
 
 use crate::types::{DNSConstraint, IPAddress, IPRange};
+use crate::ApplyNameConstraintStatus::{Applied, Skipped};
 use cryptography_x509::extensions::Extensions;
 use cryptography_x509::{
     certificate::Certificate,
@@ -38,7 +39,6 @@ impl From<PolicyError> for ValidationError {
     }
 }
 
-// TODO(alex): Can we avoid this?
 impl From<asn1::ParseError> for ValidationError {
     fn from(value: asn1::ParseError) -> Self {
         ValidationError::Policy(PolicyError::Malformed(value))
@@ -75,6 +75,31 @@ struct ChainBuilder<'a, 'inter, 'store, B: CryptoOps> {
     intermediates: HashSet<Certificate<'inter>>,
     policy: &'a Policy<'a, B>,
     store: &'a Store<'store>,
+}
+
+// When applying a name constraint, we need to distinguish between a few different scenarios:
+// * `Applied(true)`: The name constraint is the same type as the SAN and matches.
+// * `Applied(false)`: The name constraint is the same type as the SAN and does not match.
+// * `Skipped`: The name constraint is a different type to the SAN.
+enum ApplyNameConstraintStatus {
+    Applied(bool),
+    Skipped,
+}
+
+impl ApplyNameConstraintStatus {
+    fn is_applied(&self) -> bool {
+        match self {
+            Applied(_) => true,
+            _ => false,
+        }
+    }
+
+    fn is_match(&self) -> bool {
+        match self {
+            Applied(a) => *a,
+            _ => false,
+        }
+    }
 }
 
 impl<'a, 'inter, 'store, 'leaf, 'chain, 'work, B: CryptoOps> ChainBuilder<'a, 'inter, 'store, B>
@@ -148,31 +173,26 @@ where
         &self,
         constraint: &GeneralName<'work>,
         san: &GeneralName,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<ApplyNameConstraintStatus, ValidationError> {
         match (constraint, san) {
             (GeneralName::DNSName(pattern), GeneralName::DNSName(name)) => {
                 if let Some(pattern) = DNSConstraint::new(pattern.0) {
                     let name = DNSName::new(name.0).unwrap();
-                    if !pattern.matches(&name) {
-                        return Err(PolicyError::Other("mismatching DNS name constraint").into());
-                    }
+                    Ok(Applied(pattern.matches(&name)))
                 } else {
-                    return Err(PolicyError::Other("malformed DNS name constraint").into());
+                    Err(PolicyError::Other("malformed DNS name constraint").into())
                 }
             }
             (GeneralName::IPAddress(pattern), GeneralName::IPAddress(name)) => {
                 if let Some(pattern) = IPRange::from_bytes(pattern) {
                     let name = IPAddress::from_bytes(name).unwrap();
-                    if !pattern.matches(&name) {
-                        return Err(PolicyError::Other("mismatching IP name constraint").into());
-                    }
+                    Ok(Applied(pattern.matches(&name)))
                 } else {
-                    return Err(PolicyError::Other("malformed IP name constraint").into());
+                    Err(PolicyError::Other("malformed IP name constraint").into())
                 }
             }
-            _ => return Err(PolicyError::Other("mismatching name constraint").into()),
+            _ => Ok(Skipped),
         }
-        Ok(())
     }
 
     fn apply_name_constraints(
@@ -180,30 +200,33 @@ where
         constraints: &AccumulatedNameConstraints<'work>,
         working_cert: &Certificate<'work>,
     ) -> Result<(), ValidationError> {
-        // TODO(alex): Don't we need to apply this to the subject too?
-        // Unfortunately `Certificate.subject` doesn't give a string so there'll be more type wrangling involved.
-        if constraints.permitted.is_empty() && constraints.excluded.is_empty() {
-            return Ok(());
-        }
         let extensions = working_cert.extensions()?;
         if let Some(sans) = extensions.get_extension(&SUBJECT_ALTERNATIVE_NAME_OID) {
             let sans: SubjectAlternativeName = sans.value()?;
             for san in sans.clone() {
-                if !constraints.permitted.is_empty()
-                    && !constraints
-                        .permitted
-                        .iter()
-                        .any(|c| self.apply_name_constraint(c, &san).is_ok())
-                {
+                // If there are no applicable constraints, the SAN is considered valid so let's default to true.
+                let mut permit = true;
+                for c in constraints.permitted.iter() {
+                    let status = self.apply_name_constraint(c, &san)?;
+                    if status.is_applied() {
+                        permit = status.is_match();
+                        if permit {
+                            break;
+                        }
+                    }
+                }
+                if !permit {
                     return Err(
                         PolicyError::Other("no permitted name constraints matched SAN").into(),
                     );
-                } else if constraints
-                    .excluded
-                    .iter()
-                    .any(|c| self.apply_name_constraint(c, &san).is_ok())
-                {
-                    return Err(PolicyError::Other("excluded name constraint matched SAN").into());
+                }
+                for c in constraints.excluded.iter() {
+                    let status = self.apply_name_constraint(c, &san)?;
+                    if status.is_match() {
+                        return Err(
+                            PolicyError::Other("excluded name constraint matched SAN").into()
+                        );
+                    }
                 }
             }
         }
