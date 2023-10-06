@@ -147,7 +147,8 @@ fn build_subject_owner(
         Ok(SubjectOwner::DNSName(value.to_str()?.to_owned()))
     } else if subject.is_instance(ip_address_class)? {
         let value = subject
-            .getattr(pyo3::intern!(py, "packed"))?
+            .getattr(pyo3::intern!(py, "_packed"))?
+            .call0()?
             .downcast::<pyo3::types::PyBytes>()?;
 
         Ok(SubjectOwner::IPAddress(value.into()))
