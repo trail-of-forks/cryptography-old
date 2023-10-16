@@ -17,7 +17,7 @@ use cryptography_x509::common::{
 };
 use cryptography_x509::extensions::{
     AuthorityKeyIdentifier, BasicConstraints, DuplicateExtensionsError, ExtendedKeyUsage,
-    Extension, KeyUsage, SequenceOfAccessDescriptions, SubjectAlternativeName,
+    Extension, KeyUsage, SubjectAlternativeName,
 };
 use cryptography_x509::name::GeneralName;
 use cryptography_x509::oid::{
@@ -27,7 +27,7 @@ use cryptography_x509::oid::{
     SUBJECT_KEY_IDENTIFIER_OID,
 };
 
-use self::extension::{ca, ee, Criticality, ExtensionPolicy};
+use self::extension::{ca, common, ee, Criticality, ExtensionPolicy};
 use crate::certificate::{cert_is_self_issued, cert_is_self_signed};
 use crate::ops::CryptoOps;
 use crate::types::{DNSName, DNSPattern, IPAddress};
@@ -225,6 +225,7 @@ pub struct Policy<'a, B: CryptoOps> {
     pub critical_ca_extensions: HashSet<ObjectIdentifier>,
     pub critical_ee_extensions: HashSet<ObjectIdentifier>,
 
+    common_extension_policies: Vec<ExtensionPolicy<B>>,
     ca_extension_policies: Vec<ExtensionPolicy<B>>,
     ee_extension_policies: Vec<ExtensionPolicy<B>>,
 }
@@ -248,6 +249,12 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             ),
             critical_ca_extensions: RFC5280_CRITICAL_CA_EXTENSIONS.iter().cloned().collect(),
             critical_ee_extensions: RFC5280_CRITICAL_EE_EXTENSIONS.iter().cloned().collect(),
+            common_extension_policies: Vec::from([ExtensionPolicy::maybe_present(
+                // 5280 4.2.2.1: Authority Information Access
+                AUTHORITY_INFORMATION_ACCESS_OID,
+                Criticality::NonCritical,
+                Some(common::authority_information_access),
+            )]),
             ca_extension_policies: Vec::from([
                 // 5280 4.2.1.2: Subject Key Identifier
                 ExtensionPolicy::present(
@@ -355,6 +362,10 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         // and it MUST be non-empty if present.
         // TODO: Check this.
 
+        for ext_policy in self.common_extension_policies.iter() {
+            ext_policy.permits(self, cert, &extensions)?;
+        }
+
         // 5280 4.2.1.1: Authority Key Identifier
         // Certificates MUST have an AuthorityKeyIdentifier, it MUST contain
         // the keyIdentifier field, and it MUST NOT be critical.
@@ -411,17 +422,6 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             .map_or(false, |e| e.critical)
         {
             return Err("SubjectDirectoryAttributes must not be marked critical".into());
-        }
-
-        // 5280 4.2.2.1: Authority Information Access
-        // Conforming CAs MUST mark this extension as non-critical.
-        if let Some(aia) = extensions.get_extension(&AUTHORITY_INFORMATION_ACCESS_OID) {
-            if aia.critical {
-                return Err("AuthorityInformationAccess must not be marked critical".into());
-            }
-            // We're not expected to do anything meaningful with this but at the very least, we
-            // should check that it's not malformed.
-            let _: SequenceOfAccessDescriptions<'_> = aia.value()?;
         }
 
         // Non-profile checks follow.
