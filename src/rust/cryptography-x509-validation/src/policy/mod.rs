@@ -17,13 +17,14 @@ use cryptography_x509::common::{
 };
 use cryptography_x509::extensions::{
     AuthorityKeyIdentifier, BasicConstraints, DuplicateExtensionsError, ExtendedKeyUsage,
-    Extension, KeyUsage, SubjectAlternativeName,
+    Extension, KeyUsage, SequenceOfAccessDescriptions, SubjectAlternativeName,
 };
 use cryptography_x509::name::GeneralName;
 use cryptography_x509::oid::{
-    AUTHORITY_KEY_IDENTIFIER_OID, BASIC_CONSTRAINTS_OID, EKU_SERVER_AUTH_OID,
-    EXTENDED_KEY_USAGE_OID, KEY_USAGE_OID, NAME_CONSTRAINTS_OID, POLICY_CONSTRAINTS_OID,
-    SUBJECT_ALTERNATIVE_NAME_OID, SUBJECT_DIRECTORY_ATTRIBUTES_OID, SUBJECT_KEY_IDENTIFIER_OID,
+    AUTHORITY_INFORMATION_ACCESS_OID, AUTHORITY_KEY_IDENTIFIER_OID, BASIC_CONSTRAINTS_OID,
+    EKU_SERVER_AUTH_OID, EXTENDED_KEY_USAGE_OID, KEY_USAGE_OID, NAME_CONSTRAINTS_OID,
+    POLICY_CONSTRAINTS_OID, SUBJECT_ALTERNATIVE_NAME_OID, SUBJECT_DIRECTORY_ATTRIBUTES_OID,
+    SUBJECT_KEY_IDENTIFIER_OID,
 };
 
 use self::extension::{ca, ee, Criticality, ExtensionPolicy};
@@ -410,6 +411,17 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             .map_or(false, |e| e.critical)
         {
             return Err("SubjectDirectoryAttributes must not be marked critical".into());
+        }
+
+        // 5280 4.2.2.1: Authority Information Access
+        // Conforming CAs MUST mark this extension as non-critical.
+        if let Some(aia) = extensions.get_extension(&AUTHORITY_INFORMATION_ACCESS_OID) {
+            if aia.critical {
+                return Err("AuthorityInformationAccess must not be marked critical".into());
+            }
+            // We're not expected to do anything meaningful with this but at the very least, we
+            // should check that it's not malformed.
+            let _: SequenceOfAccessDescriptions<'_> = aia.value()?;
         }
 
         // Non-profile checks follow.
