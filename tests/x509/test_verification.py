@@ -79,13 +79,13 @@ def _limbo_testcase(testcase):
     )
     should_pass = testcase["expected_result"] == "SUCCESS"
 
-    policy = PolicyBuilder(
-        subject=peer_name, time=validation_time, profile=Profile.RFC5280
-    ).build()
+    verifier = PolicyBuilder(time=validation_time).build_server_verifier(
+        peer_name
+    )
     store = Store(trusted_certs)
 
     try:
-        verify(peer_certificate, policy, untrusted_intermediates, store)
+        verifier.verify(peer_certificate, untrusted_intermediates, store)
         assert (
             should_pass
         ), f"{testcase_id}: verification succeeded when we expected failure"
