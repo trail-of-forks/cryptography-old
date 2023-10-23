@@ -53,9 +53,6 @@ def _limbo_testcase(testcase):
         testcase["signature_algorithms"] is None
     ), f"{testcase_id}: signature_algorithms not supported yet"
     assert (
-        testcase["extended_key_usage"] is None
-    ), f"{testcase_id}: extended_key_usage not supported yet"
-    assert (
         testcase["expected_peer_names"] is None
     ), f"{testcase_id}: expected_peer_names not supported yet"
 
