@@ -22,7 +22,7 @@ from tests.x509.test_x509 import _load_cert
 
 def _get_limbo_peer(expected_peer, testcase_id):
     if expected_peer is None:
-        return None
+        assert False, f"{testcase_id}: no expected peer name"
     kind = expected_peer["kind"]
     value = expected_peer["value"]
     if kind == "DNS":
