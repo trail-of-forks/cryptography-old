@@ -267,7 +267,11 @@ where
                 let result = self.build_chain_inner(issuing_cert_candidate, next_depth, false);
                 if let Ok(result) = result {
                     let (remaining, mut constraints) = result;
-                    // Name constraints are not applied to self-issued certificates unless they're the leaf certificate in the chain.
+                    // Name constraints are not applied to self-issued certificates unless they're
+                    // the leaf certificate in the chain.
+                    //
+                    // NOTE: We can't simply check the `current_depth` since self-issued
+                    // certificates don't increase the working depth.
                     let skip_name_constraints = cert_is_self_issued(working_cert) && !is_leaf;
                     if skip_name_constraints
                         || self
