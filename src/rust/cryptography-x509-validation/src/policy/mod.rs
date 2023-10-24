@@ -357,18 +357,25 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         }
 
         // Check that all critical extensions in this certificate are accounted for.
-        for extension in extensions.iter() {
-            if extension.critical {
-                let policies_handle_extension = |policies: &Vec<ExtensionPolicy<B>>| {
-                    policies.iter().any(|x| x.oid == extension.extn_id)
-                };
-                if !policies_handle_extension(&self.common_extension_policies)
-                    && !policies_handle_extension(&self.ca_extension_policies)
-                    && !policies_handle_extension(&self.ee_extension_policies)
-                {
-                    return Err("certificate contains unaccounted critical extension".into());
-                }
-            }
+        let critical_extensions = extensions
+            .iter()
+            .filter(|e| e.critical)
+            .map(|e| e.extn_id)
+            .collect::<HashSet<_>>();
+        let checked_extensions = self
+            .common_extension_policies
+            .iter()
+            .chain(self.ca_extension_policies.iter())
+            .chain(self.ee_extension_policies.iter())
+            .map(|p| p.oid.clone())
+            .collect::<HashSet<_>>();
+        let unchecked_extensions = critical_extensions
+            .difference(&checked_extensions)
+            .collect::<Vec<_>>();
+
+        if !unchecked_extensions.is_empty() {
+            // TODO: Render the OIDs here.
+            return Err("certificate contains unaccounted-for critical extensions".into());
         }
 
         Ok(())
@@ -565,15 +572,14 @@ mod tests {
     };
 
     use crate::{
-        ops::tests::NullOps,
         policy::Subject,
         types::{DNSName, IPAddress},
     };
 
     use super::{
-        Policy, ECDSA_SHA256, ECDSA_SHA384, ECDSA_SHA512, RSASSA_PKCS1V15_SHA256,
-        RSASSA_PKCS1V15_SHA384, RSASSA_PKCS1V15_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
-        RSASSA_PSS_SHA512, WEBPKI_PERMITTED_ALGORITHMS,
+        ECDSA_SHA256, ECDSA_SHA384, ECDSA_SHA512, RSASSA_PKCS1V15_SHA256, RSASSA_PKCS1V15_SHA384,
+        RSASSA_PKCS1V15_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
+        WEBPKI_PERMITTED_ALGORITHMS,
     };
 
     #[test]
