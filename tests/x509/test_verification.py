@@ -34,8 +34,13 @@ def _get_limbo_peer(expected_peer, testcase_id):
 
 
 LIMBO_UNSUPPORTED_FEATURES = {
+    # NOTE: Path validation is required to reject wildcards on public suffixes,
+    # however this isn't practical and most implementations make no attempt to
+    # comply with this.
     "pedantic-public-suffix-wildcard",
+    # TODO: We don't support Distinguished Name Constraints yet.
     "name-constraint-dn",
+    # TODO: We don't support Extended Key Usage yet.
     "eku",
 }
 
