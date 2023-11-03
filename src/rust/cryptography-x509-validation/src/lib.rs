@@ -440,6 +440,7 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
             ops,
             policy::Subject::DNS(DNSName::new("cryptography.io").unwrap()),
             time,
+            None,
         );
 
         let chain = verify(&ee, [intermediate.clone()], &policy, &store).unwrap();
@@ -528,6 +529,7 @@ nLRbwHOoq7hHwg==
             ops,
             policy::Subject::DNS(DNSName::new("cryptography.io").unwrap()),
             time,
+            None,
         );
         assert_eq!(
             verify(&ee, [intermediate.clone()], &policy, &store).err(),

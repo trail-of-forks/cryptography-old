@@ -253,10 +253,15 @@ pub struct Policy<'a, B: CryptoOps> {
 impl<'a, B: CryptoOps> Policy<'a, B> {
     /// Create a new policy with defaults for the certificate profile defined in
     /// the CA/B Forum's Basic Requirements.
-    pub fn new(ops: B, subject: Subject<'a>, time: asn1::DateTime) -> Self {
+    pub fn new(
+        ops: B,
+        subject: Subject<'a>,
+        time: asn1::DateTime,
+        max_chain_depth: Option<u8>,
+    ) -> Self {
         Self {
             ops,
-            max_chain_depth: 8,
+            max_chain_depth: max_chain_depth.unwrap_or(8),
             subject,
             validation_time: time,
             extended_key_usage: EKU_SERVER_AUTH_OID.clone(),
