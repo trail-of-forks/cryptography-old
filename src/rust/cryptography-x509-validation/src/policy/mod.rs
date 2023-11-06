@@ -457,9 +457,7 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         if let Some(key_usage) = extensions.get_extension(&KEY_USAGE_OID) {
             let key_usage: KeyUsage<'_> = key_usage.value()?;
             if key_usage.key_cert_sign() {
-                // NOTE: Pass in a current depth of 1 here, since we're
-                // checking a CA in the leaf position.
-                return self.permits_ca(leaf, 1);
+                return self.permits_ca(leaf, 0);
             }
         }
         self.permits_ee(leaf)
