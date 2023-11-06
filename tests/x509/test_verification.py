@@ -84,10 +84,13 @@ def _limbo_testcase(testcase):
         if validation_time is not None
         else None
     )
+    max_chain_depth = testcase["max_chain_depth"]
     should_pass = testcase["expected_result"] == "SUCCESS"
 
     verifier = PolicyBuilder(
-        time=validation_time, store=Store(trusted_certs)
+        time=validation_time,
+        store=Store(trusted_certs),
+        max_chain_depth=max_chain_depth,
     ).build_server_verifier(peer_name)
 
     try:

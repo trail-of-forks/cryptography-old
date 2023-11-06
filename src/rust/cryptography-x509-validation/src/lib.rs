@@ -300,8 +300,7 @@ where
         // against the EE cert's SANs.
         self.policy.permits_leaf(leaf)?;
 
-        // NOTE: We start the chain depth at 1, indicating the EE.
-        let result = self.build_chain_inner(leaf, 1, true);
+        let result = self.build_chain_inner(leaf, 0, true);
         match result {
             Ok(result) => {
                 let (chain, _) = result;

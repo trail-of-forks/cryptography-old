@@ -490,12 +490,9 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
                 .value()
                 .map_err(|_| PolicyError::Other("issuer has malformed basicConstraints"))?;
 
-            // NOTE: `current_depth` starts at 1, indicating the EE cert in the chain.
-            // Path length constraints only concern the intermediate portion of a chain,
-            // so we have to adjust by 1.
             if bc
                 .path_length
-                .map_or(false, |len| (current_depth as u64) - 1 > len)
+                .map_or(false, |len| current_depth as u64 > len)
             {
                 return Err(PolicyError::Other("path length constraint violated"));
             }
